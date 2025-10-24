@@ -1,17 +1,21 @@
 // lib/register_screen.dart
 
 import 'package:flutter/material.dart';
+// --- 1. 导入 Firebase 包 ---
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'home_screen.dart'; // <-- 导入 HomeScreen
 
-// 对应 Composable fun RegisterScreen(onBackClick: () -> Unit)
+// RegisterScreen (StatefulWidget) 保持不变
 class RegisterScreen extends StatefulWidget {
   // --- 步骤 1: 添加这个变量来接收数据 ---
   final String userType;
 
   // --- 步骤 2: 在构造函数中要求传入这个值 ---
   const RegisterScreen({
-    Key? key,
+    super.key,
     required this.userType, // 告诉 Flutter 这个参数是必须的
-  }) : super(key: key);
+  });
 
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
@@ -25,6 +29,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController = TextEditingController();
 
+  // --- 3. 添加一个 loading 状态 ---
+  bool _isLoading = false;
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -35,10 +42,94 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
+  // --- 4. 创建 Firebase 注册方法 ---
+  Future<void> _registerUser() async {
+    // 检查所有控制器是否已挂载
+    if (!mounted) return;
+
+    // a. 开始加载
+    setState(() {
+      _isLoading = true;
+    });
+
+    // b. 验证密码
+    if (_passwordController.text != _confirmPasswordController.text) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Passwords do not match!")),
+      );
+      setState(() {
+        _isLoading = false;
+      });
+      return;
+    }
+
+    try {
+      // c. 步骤 1: 在 Firebase Auth 中创建用户
+      UserCredential userCredential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
+
+      // d. 步骤 2: 在 Cloud Firestore 中存储额外信息
+      User? user = userCredential.user;
+      if (user != null) {
+        // 我们使用 user.uid 作为文档 ID
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+          'uid': user.uid,
+          'name': _nameController.text.trim(),
+          'email': _emailController.text.trim(),
+          'phone': _phoneController.text.trim(),
+          'userType': widget.userType, // <-- 成功传入并存储了 userType！
+          'createdAt': Timestamp.now(), // 记录创建时间
+        });
+
+        // --- 5. 这是被修改的部分 ---
+        if (mounted) {
+           ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Registration Successful! Welcome!")),
+          );
+          // 注册成功后，跳转到主页并清除所有旧路由
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const HomeScreen()),
+            (Route<dynamic> route) => false,
+          );
+        }
+        // --- 修改结束 ---
+      }
+    } on FirebaseAuthException catch (e) {
+      // f. 处理 Auth 错误
+      String message;
+      if (e.code == 'weak-password') {
+        message = 'The password provided is too weak.';
+      } else if (e.code == 'email-already-in-use') {
+        message = 'The account already exists for that email.';
+      } else {
+        message = e.message ?? "An unknown error occurred.";
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } catch (e) {
+      // g. 处理其他错误
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("An error occurred: $e")),
+      );
+    } finally {
+      // h. 停止加载
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.background,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.primaryContainer,
         iconTheme: IconThemeData(
@@ -78,8 +169,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   const SizedBox(height: 16.0),
 
                   // --- 步骤 3: 显示继承过来的 userType ---
-                  // 我们使用和 LoginScreen 一样的按钮，但是让它们不可点击 (onPressed: null)
-                  // 我们可以通过 "widget.userType" 来访问传递过来的值
                   Row(
                     children: [
                       Expanded(
@@ -89,14 +178,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: widget.userType == "Landlord"
                                 ? Theme.of(context).colorScheme.primary
-                                : Theme.of(context).colorScheme.surfaceVariant,
+                                : Theme.of(context).colorScheme.surfaceContainerHighest,
                             foregroundColor: widget.userType == "Landlord"
                                 ? Theme.of(context).colorScheme.onPrimary
                                 : Theme.of(context).colorScheme.onSurfaceVariant,
                             // 当按钮被禁用时，Flutter 会自动应用一层透明度
                             disabledBackgroundColor: widget.userType == "Landlord"
                                 ? Theme.of(context).colorScheme.primary.withOpacity(0.5)
-                                : Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+                                : Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
                              disabledForegroundColor: widget.userType == "Landlord"
                                 ? Theme.of(context).colorScheme.onPrimary.withOpacity(0.5)
                                 : Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
@@ -112,13 +201,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: widget.userType == "Tenant"
                                 ? Theme.of(context).colorScheme.primary
-                                : Theme.of(context).colorScheme.surfaceVariant,
+                                : Theme.of(context).colorScheme.surfaceContainerHighest,
                             foregroundColor: widget.userType == "Tenant"
                                 ? Theme.of(context).colorScheme.onPrimary
                                 : Theme.of(context).colorScheme.onSurfaceVariant,
                             disabledBackgroundColor: widget.userType == "Tenant"
                                 ? Theme.of(context).colorScheme.primary.withOpacity(0.5)
-                                : Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+                                : Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
                              disabledForegroundColor: widget.userType == "Tenant"
                                 ? Theme.of(context).colorScheme.onPrimary.withOpacity(0.5)
                                 : Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
@@ -190,18 +279,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                   // 注册按钮
                   ElevatedButton(
-                    onPressed: () {
-                      /* TODO: 在这里处理 Firebase 注册 */
-                      // 注册时，你可以使用 widget.userType 来区分是房东还是租户
-                      print("Registering new user as: ${widget.userType}");
-                    },
+                    // --- 6. 修改 onPressed 和 child ---
+                    onPressed: _isLoading ? null : _registerUser, // a. 正在加载时禁用按钮
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16.0),
                     ),
-                    child: const Text(
-                      "Register",
-                      style: TextStyle(fontSize: 18.0),
-                    ),
+                    child: _isLoading
+                        ? const CircularProgressIndicator( // b. 显示加载动画
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          )
+                        : const Text( // c. 显示文字
+                            "Register",
+                            style: TextStyle(fontSize: 18.0),
+                          ),
                   ),
                 ],
               ),

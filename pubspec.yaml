@@ -1,15 +1,21 @@
 name: smart_rental_system
 description: "A new Flutter project."
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+publish_to: 'none'
 
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.4.0 <4.0.0' # 我帮你修正了一个可能的版本问题，如果你确定要用 3.9.2 也可以
+  sdk: '>=3.4.0 <4.0.0'
 
 dependencies:
+  # 确保 flutter: 在 dependencies: 下面缩进2个空格
   flutter:
     sdk: flutter
+
+  # 确保这些包和 flutter: 在同一缩进级别
+  firebase_core: ^4.2.0
+  firebase_auth: ^6.1.1
+  cloud_firestore: ^6.0.3
   cupertino_icons: ^1.0.8
 
 dev_dependencies:
@@ -17,43 +23,9 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^5.0.0
 
-# For information on the generic Dart part of this file, see the
-# following page: https://dart.dev/tools/pub/pubspec
-
-# The following section is specific to Flutter packages.
 flutter:
-
-  # The following line ensures that the Material Icons font is
-  # included with your application, so that you can use the icons in
-  # the material Icons class.
   uses-material-design: true
-
-  # To add assets to your application, add an assets section, like this:
+  
+  # 你这里的 assets 声明是完全正确的！
   assets:
-    - assets/images/my_logo.png # <-- 我帮你取消了注释并添加了这一行
-
-  # An image asset can refer to one or more resolution-specific "variants", see
-  # https://flutter.dev/to/resolution-aware-images
-
-  # For details regarding adding assets from package dependencies, see
-  # https://flutter.dev/to/asset-from-package
-
-  # To add custom fonts to your application, add a fonts section here,
-  # in this "flutter" section. Each entry in this list should have a
-  # "family" key with the font family name, and a "fonts" key with a
-  # list giving the asset and other descriptors for the font. For
-  # example:
-  # fonts:
-  #   - family: Schyler
-  #     fonts:
-  #       - asset: fonts/Schyler-Regular.ttf
-  #       - asset: fonts/Schyler-Italic.ttf
-  #         style: italic
-  #   - family: Trajan Pro
-  #     fonts:
-  #       - asset: fonts/TrajanPro.ttf
-  #       - asset: fonts/TrajanPro_Bold.ttf
-  #         weight: 700
-  #
-  # For details regarding fonts from package dependencies,
-  # see https://flutter.dev/to/font-from-package
+    - assets/images/my_logo.png

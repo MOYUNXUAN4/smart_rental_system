@@ -1,30 +1,108 @@
 // lib/login_screen.dart
 
 import 'package:flutter/material.dart';
-import 'register_screen.dart'; // 导入我们创建的注册页面
+import 'register_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // <-- 1. 导入
+import 'home_screen.dart'; // <-- 2. 导入
+// 导入 cloud_firestore 以便未来检查 userType
+import 'package:cloud_firestore/cloud_firestore.dart'; 
 
-// 对应 Compose 的 @Composable fun LoginScreen(...)
-// 我们使用 StatefulWidget，因为它需要管理状态 (selectedType)
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({Key? key}) : super(key: key);
+  const LoginScreen({super.key});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  // 对应
-  // var selectedType by remember { mutableStateOf("Tenant") }
   String _selectedType = "Tenant";
-
-  // 对应
-  // var account by remember { mutableStateOf("") }
-  // var password by remember { mutableStateOf("") }
-  // 在 Flutter 中，我们使用 TextEditingController 来管理输入框
   final TextEditingController _accountController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
-  // 别忘了释放 Controller
+  // --- 3. 添加 loading 状态 ---
+  bool _isLoading = false;
+
+  // --- 4. 添加 登录 方法 ---
+  Future<void> _loginUser() async {
+    // 检查 widget 是否还在树中
+    if (!mounted) return;
+    setState(() { _isLoading = true; });
+
+    try {
+      // 步骤 1: 登录
+      UserCredential userCredential = await FirebaseAuth.instance
+          .signInWithEmailAndPassword(
+        email: _accountController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
+
+      // --- 步骤 2: (重要!) 检查 userType 是否匹配 ---
+      User? user = userCredential.user;
+      if (user != null) {
+        final DocumentSnapshot userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
+
+        if (userDoc.exists && userDoc.data() != null) {
+          // 使用 Map<String, dynamic> 来安全地获取数据
+          final data = userDoc.data() as Map<String, dynamic>;
+          final String actualUserType = data.containsKey('userType') ? data['userType'] : '';
+          
+          if (actualUserType == _selectedType) {
+            // 类型匹配，登录成功
+            if (mounted) {
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (context) => const HomeScreen()),
+                (Route<dynamic> route) => false,
+              );
+            }
+          } else {
+            // 类型不匹配，登出并显示错误
+            await FirebaseAuth.instance.signOut();
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text("Login failed. You are not a $_selectedType.")),
+              );
+            }
+          }
+        } else {
+          // 在 Auth 中存在，但在数据库中不存在 (不应该发生)
+          await FirebaseAuth.instance.signOut();
+           if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("User data not found. Please contact support.")),
+            );
+           }
+        }
+      }
+    } on FirebaseAuthException catch (e) {
+      String message = "An error occurred. Please check your credentials.";
+      // 捕获 'invalid-credential' 错误，这是新版 Firebase 的常见错误
+      if (e.code == 'user-not-found' || e.code == 'wrong-password' || e.code == 'invalid-credential') {
+        message = 'Wrong email or password.';
+      } else {
+        message = e.message ?? message;
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+      }
+    } catch (e) {
+       if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("An error occurred: $e")),
+        );
+       }
+    } finally {
+      if (mounted) {
+        setState(() { _isLoading = false; });
+      }
+    }
+  }
+
   @override
   void dispose() {
     _accountController.dispose();
@@ -34,17 +112,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // 对应 Compose 的 Column(fillMaxSize, background)
-    // 在 Flutter 中，Scaffold 是页面的根布局
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.background,
-
-      // 对应顶部的 Row (TopAppBar)
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
+        // ... (AppBar UI 保持不变)
         backgroundColor: Theme.of(context).colorScheme.primaryContainer,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: Theme.of(context).colorScheme.onPrimaryContainer),
-          onPressed: () { /* TODO: 处理返回事件 */ },
+          onPressed: () { /* TODO */ },
         ),
         title: Text(
           "Log in",
@@ -56,64 +131,47 @@ class _LoginScreenState extends State<LoginScreen> {
         actions: [
           IconButton(
             icon: Icon(Icons.notifications, color: Theme.of(context).colorScheme.onPrimaryContainer),
-            onPressed: () { /* TODO: 处理通知点击 */ },
+            onPressed: () { /* TODO */ },
           ),
         ],
       ),
-
-      // 对应中间的 Column(weight(1f))
-      // SingleChildScrollView 可以在内容过多时（比如弹出键盘）防止溢出
       body: SingleChildScrollView(
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            // 确保内容至少填满屏幕（减去 AppBar 和 Padding 的高度）
             minHeight: MediaQuery.of(context).size.height - kToolbarHeight - 32,
           ),
           child: IntrinsicHeight(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
-              // 对应中间的 Card
               child: Card(
                 color: Theme.of(context).colorScheme.primaryContainer,
                 elevation: 4.0,
-                // 卡片内部的 Column
                 child: Padding(
                   padding: const EdgeInsets.all(24.0),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // 对应 Spacer(modifier = Modifier.weight(0.5f))
-                      const Spacer(flex: 5), // flex 类似于 weight
-
-                      // 对应 Image(R.drawable.my_logo)
+                      const Spacer(flex: 5),
                       Image.asset(
-                        'assets/images/my_logo.png', // 确保这个路径与 pubspec.yaml 中一致
+                        'assets/images/my_logo.png',
                         width: 300,
                         height: 300,
                       ),
-
-                      // 对应 Landlord/Tenant 按钮的 Row
                       Row(
+                        // ... (Landlord/Tenant 按钮 UI 保持不变)
                         children: [
-                          // Landlord 按钮
                           Expanded(
-                            // 对应 animateFloatAsState (scale)
                             child: AnimatedScale(
                               scale: _selectedType == "Landlord" ? 1.1 : 1.0,
                               duration: const Duration(milliseconds: 300),
-                              // 对应 animateDpAsState (elevation) 和 animateColorAsState (colors)
-                              // Flutter 的 ElevatedButton/OutlinedButton 会自动为其样式的变化添加动画
                               child: ElevatedButton(
                                 onPressed: () {
-                                  setState(() {
-                                    _selectedType = "Landlord";
-                                  });
+                                  setState(() { _selectedType = "Landlord"; });
                                 },
-                                // 根据状态动态改变样式
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: _selectedType == "Landlord"
                                       ? Theme.of(context).colorScheme.primary
-                                      : Theme.of(context).colorScheme.surfaceVariant,
+                                      : Theme.of(context).colorScheme.surfaceContainerHighest,
                                   foregroundColor: _selectedType == "Landlord"
                                       ? Theme.of(context).colorScheme.onPrimary
                                       : Theme.of(context).colorScheme.onSurfaceVariant,
@@ -123,24 +181,19 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             ),
                           ),
-                          
-                          const SizedBox(width: 16.0), // 对应 Spacer(width(16.dp))
-
-                          // Tenant 按钮
+                          const SizedBox(width: 16.0),
                           Expanded(
                             child: AnimatedScale(
                               scale: _selectedType == "Tenant" ? 1.1 : 1.0,
                               duration: const Duration(milliseconds: 300),
                               child: ElevatedButton(
                                 onPressed: () {
-                                  setState(() {
-                                    _selectedType = "Tenant";
-                                  });
+                                  setState(() { _selectedType = "Tenant"; });
                                 },
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: _selectedType == "Tenant"
                                       ? Theme.of(context).colorScheme.primary
-                                      : Theme.of(context).colorScheme.surfaceVariant,
+                                      : Theme.of(context).colorScheme.surfaceContainerHighest,
                                   foregroundColor: _selectedType == "Tenant"
                                       ? Theme.of(context).colorScheme.onPrimary
                                       : Theme.of(context).colorScheme.onSurfaceVariant,
@@ -152,30 +205,54 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 24.0), // 对应 Spacer(height(24.dp))
-
-                      // 对应 Account 的 OutlinedTextField
+                      const SizedBox(height: 24.0),
                       TextFormField(
                         controller: _accountController,
                         decoration: const InputDecoration(
                           labelText: "Account",
                           border: OutlineInputBorder(),
                         ),
+                        keyboardType: TextInputType.emailAddress, // 明确设为 email
                       ),
                       const SizedBox(height: 16.0),
-
-                      // 对应 Password 的 OutlinedTextField
                       TextFormField(
                         controller: _passwordController,
-                        obscureText: true, // 对应 PasswordVisualTransformation
+                        obscureText: true,
                         decoration: const InputDecoration(
                           labelText: "Passwords",
                           border: OutlineInputBorder(),
                         ),
                       ),
-                      const SizedBox(height: 16.0),
+                      const SizedBox(height: 24.0), // <-- 增加间距
 
-                      // 对应 "Find Passwords" 和 "Register" 的 Row
+                      // --- 5. 添加 登录 按钮 ---
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _isLoading ? null : _loginUser,
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16.0),
+                            backgroundColor: Theme.of(context).colorScheme.primary,
+                            foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                          ),
+                          child: _isLoading
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 3,
+                                  ),
+                                )
+                              : const Text(
+                                  "Log in",
+                                  style: TextStyle(fontSize: 18.0),
+                                ),
+                        ),
+                      ),
+                      const SizedBox(height: 16.0),
+                      
+                      // --- Find Passwords / Register Row 保持不变 ---
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -185,13 +262,11 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           TextButton(
                             onPressed: () {
-                              // *** 这是唯一的修改 ***
-                              // 我们把 _selectedType 变量传递给 RegisterScreen
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) => RegisterScreen(
-                                    userType: _selectedType, // <-- 修改在这里
+                                    userType: _selectedType,
                                   ),
                                 ),
                               );
@@ -200,8 +275,6 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ],
                       ),
-
-                      // 对应 Spacer(modifier = Modifier.weight(0.5f))
                       const Spacer(flex: 5),
                     ],
                   ),
@@ -211,35 +284,19 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       ),
-
-      // 对应底部的 Row (BottomNavBar)
-      // Flutter 中使用 BottomNavigationBar
       bottomNavigationBar: BottomNavigationBar(
+        // ... (底部导航栏 UI 保持不变)
         backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-        type: BottomNavigationBarType.fixed, // 确保所有项都可见
-        selectedItemColor: Theme.of(context).colorScheme.primary, // "My Account" 选中颜色
-        unselectedItemColor: Theme.of(context).colorScheme.onSurfaceVariant, // 未选中颜色
-        currentIndex: 3, // "My Account" 是第 4 项 (索引为 3)
-        onTap: (index) {
-          // TODO: 处理底部导航点击事件
-        },
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: Theme.of(context).colorScheme.primary,
+        unselectedItemColor: Theme.of(context).colorScheme.onSurfaceVariant,
+        currentIndex: 3,
+        onTap: (index) { /* TODO */ },
         items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: "Home Page",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.list),
-            label: "List",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.star),
-            label: "Favorites", // 我修正了拼写
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: "My Account",
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home Page"),
+          BottomNavigationBarItem(icon: Icon(Icons.list), label: "List"),
+          BottomNavigationBarItem(icon: Icon(Icons.star), label: "Favorites"),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: "My Account"),
         ],
       ),
     );
