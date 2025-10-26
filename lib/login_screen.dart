@@ -2,10 +2,11 @@
 
 import 'package:flutter/material.dart';
 import 'register_screen.dart';
-import 'package:firebase_auth/firebase_auth.dart'; // <-- 1. 导入
-import 'home_screen.dart'; // <-- 2. 导入
-// 导入 cloud_firestore 以便未来检查 userType
-import 'package:cloud_firestore/cloud_firestore.dart'; 
+import 'package:firebase_auth/firebase_auth.dart';
+
+// 【修改点 1】: 不再需要导入 HomeScreen 和 cloud_firestore
+// import 'home_screen.dart'; 
+// import 'package:cloud_firestore/cloud_firestore.dart'; 
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -18,68 +19,27 @@ class _LoginScreenState extends State<LoginScreen> {
   String _selectedType = "Tenant";
   final TextEditingController _accountController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-
-  // --- 3. 添加 loading 状态 ---
   bool _isLoading = false;
 
-  // --- 4. 添加 登录 方法 ---
+  // --- 【修改点 2】: 极大地简化登录方法 ---
   Future<void> _loginUser() async {
     // 检查 widget 是否还在树中
     if (!mounted) return;
     setState(() { _isLoading = true; });
 
     try {
-      // 步骤 1: 登录
-      UserCredential userCredential = await FirebaseAuth.instance
-          .signInWithEmailAndPassword(
+      // 步骤 1: 只进行登录，不再检查用户类型或手动导航
+      // AuthGate 中的 StreamBuilder 会自动监听这个变化
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: _accountController.text.trim(),
         password: _passwordController.text.trim(),
       );
-
-      // --- 步骤 2: (重要!) 检查 userType 是否匹配 ---
-      User? user = userCredential.user;
-      if (user != null) {
-        final DocumentSnapshot userDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .get();
-
-        if (userDoc.exists && userDoc.data() != null) {
-          // 使用 Map<String, dynamic> 来安全地获取数据
-          final data = userDoc.data() as Map<String, dynamic>;
-          final String actualUserType = data.containsKey('userType') ? data['userType'] : '';
-          
-          if (actualUserType == _selectedType) {
-            // 类型匹配，登录成功
-            if (mounted) {
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (context) => const HomeScreen()),
-                (Route<dynamic> route) => false,
-              );
-            }
-          } else {
-            // 类型不匹配，登出并显示错误
-            await FirebaseAuth.instance.signOut();
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text("Login failed. You are not a $_selectedType.")),
-              );
-            }
-          }
-        } else {
-          // 在 Auth 中存在，但在数据库中不存在 (不应该发生)
-          await FirebaseAuth.instance.signOut();
-           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("User data not found. Please contact support.")),
-            );
-           }
-        }
-      }
+      
+      // 如果登录成功，AuthGate 会自动处理后续跳转，这里什么都不用做
+      
     } on FirebaseAuthException catch (e) {
+      // 错误处理逻辑保持不变，这部分做得很好
       String message = "An error occurred. Please check your credentials.";
-      // 捕获 'invalid-credential' 错误，这是新版 Firebase 的常见错误
       if (e.code == 'user-not-found' || e.code == 'wrong-password' || e.code == 'invalid-credential') {
         message = 'Wrong email or password.';
       } else {
@@ -97,6 +57,7 @@ class _LoginScreenState extends State<LoginScreen> {
         );
        }
     } finally {
+      // 无论成功失败，最后都停止加载动画
       if (mounted) {
         setState(() { _isLoading = false; });
       }
@@ -112,14 +73,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // UI 部分 (build 方法) 不需要任何修改，您的 UI 代码写得很好！
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
-        // ... (AppBar UI 保持不变)
         backgroundColor: Theme.of(context).colorScheme.primaryContainer,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: Theme.of(context).colorScheme.onPrimaryContainer),
-          onPressed: () { /* TODO */ },
+          onPressed: () { if (Navigator.canPop(context)) Navigator.pop(context); },
         ),
         title: Text(
           "Log in",
@@ -138,7 +99,7 @@ class _LoginScreenState extends State<LoginScreen> {
       body: SingleChildScrollView(
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            minHeight: MediaQuery.of(context).size.height - kToolbarHeight - 32,
+            minHeight: MediaQuery.of(context).size.height - kToolbarHeight - MediaQuery.of(context).padding.top,
           ),
           child: IntrinsicHeight(
             child: Padding(
@@ -152,13 +113,13 @@ class _LoginScreenState extends State<LoginScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       const Spacer(flex: 5),
+                      // 确保你的 'assets/images/my_logo.png' 路径在 pubspec.yaml 中已配置
                       Image.asset(
                         'assets/images/my_logo.png',
-                        width: 300,
-                        height: 300,
+                        width: 250, 
+                        height: 250,
                       ),
                       Row(
-                        // ... (Landlord/Tenant 按钮 UI 保持不变)
                         children: [
                           Expanded(
                             child: AnimatedScale(
@@ -212,20 +173,18 @@ class _LoginScreenState extends State<LoginScreen> {
                           labelText: "Account",
                           border: OutlineInputBorder(),
                         ),
-                        keyboardType: TextInputType.emailAddress, // 明确设为 email
+                        keyboardType: TextInputType.emailAddress,
                       ),
                       const SizedBox(height: 16.0),
                       TextFormField(
                         controller: _passwordController,
                         obscureText: true,
                         decoration: const InputDecoration(
-                          labelText: "Passwords",
+                          labelText: "Password", // 修正拼写：Password
                           border: OutlineInputBorder(),
                         ),
                       ),
-                      const SizedBox(height: 24.0), // <-- 增加间距
-
-                      // --- 5. 添加 登录 按钮 ---
+                      const SizedBox(height: 24.0),
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
@@ -251,14 +210,12 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       const SizedBox(height: 16.0),
-                      
-                      // --- Find Passwords / Register Row 保持不变 ---
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           TextButton(
-                            onPressed: () { /* TODO */ },
-                            child: const Text("Find Passwords"),
+                            onPressed: () { /* TODO: 实现找回密码 */ },
+                            child: const Text("Find Password"), // 修正拼写
                           ),
                           TextButton(
                             onPressed: () {
@@ -266,6 +223,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) => RegisterScreen(
+                                    // Landlord/Tenant 的选择现在只对注册页有意义
                                     userType: _selectedType,
                                   ),
                                 ),
@@ -285,12 +243,11 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       ),
       bottomNavigationBar: BottomNavigationBar(
-        // ... (底部导航栏 UI 保持不变)
         backgroundColor: Theme.of(context).colorScheme.primaryContainer,
         type: BottomNavigationBarType.fixed,
         selectedItemColor: Theme.of(context).colorScheme.primary,
         unselectedItemColor: Theme.of(context).colorScheme.onSurfaceVariant,
-        currentIndex: 3,
+        currentIndex: 3, // 保持在 "My Account"
         onTap: (index) { /* TODO */ },
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home Page"),
