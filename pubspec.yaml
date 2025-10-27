@@ -8,30 +8,35 @@ environment:
   sdk: '>=3.4.0 <4.0.0'
 
 dependencies:
-  # 确保 flutter: 在 dependencies: 下面缩进2个空格
   flutter:
     sdk: flutter
 
-  # 确保这些包和 flutter: 在同一缩进级别
+  # Firebase 核心服务
   firebase_core: ^4.2.0
   firebase_auth: ^6.1.1
   cloud_firestore: ^6.0.3
 
-  # ---【这是我们修改和添加的插件】---
-  firebase_storage: ^13.0.3   # 👈 修正：使用了错误日志建议的兼容版本
-  image_picker: ^1.1.2        # (这个保持不变)
-  # -----------------------------------
+  # Firebase 存储 (用于上传图片)
+  firebase_storage: ^13.0.3
+
+  # 图片选择器 (用于从相册选图)
+  image_picker: ^1.1.2
+
+  flutter_image_compress: ^2.1.0 # (或 pub.dev 上的最新版本)
 
   cupertino_icons: ^1.0.8
+  
+ 
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  
   flutter_lints: ^5.0.0
 
 flutter:
   uses-material-design: true
   
-  # 你这里的 assets 声明是完全正确的！
+  # 资源 (Assets) 路径
   assets:
     - assets/images/my_logo.png

@@ -1,10 +1,11 @@
 // lib/storage_service.dart
 
 import 'dart:io'; // 用于 File
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 class StorageService {
   final FirebaseStorage _storage = FirebaseStorage.instance;
@@ -29,13 +30,13 @@ class StorageService {
       // 步骤 1: 获取当前登录用户的 UID
       final String? uid = _auth.currentUser?.uid;
       if (uid == null) {
-        throw Exception("用户未登录");
+        throw Exception("User didn't log in");
       }
 
       // 步骤 2: 让用户从相册选择图片
       final XFile? image = await pickImage();
       if (image == null) {
-        print("未选择图片");
+        print("user didn't pick any image");
         return null; // 用户取消了选择
       }
 
@@ -49,7 +50,7 @@ class StorageService {
       final Reference ref = _storage.ref().child('user_avatars').child(fileName);
 
       // 步骤 4: 执行上传
-      print("正在上传图片...");
+      print("uploading picture...");
       final UploadTask uploadTask = ref.putFile(file);
       
       // 等待上传完成
@@ -57,7 +58,7 @@ class StorageService {
 
       // 步骤 5: 获取上传后的图片下载 URL
       final String downloadURL = await snapshot.ref.getDownloadURL();
-      print("上传成功! URL: $downloadURL");
+      print("Sucessful! URL: $downloadURL");
 
       // 步骤 6: (最关键!) 将这个 URL 更新到用户的 Firestore 文档中
       // 这样 App 里的其他地方才能读取到这个头像
@@ -69,7 +70,7 @@ class StorageService {
       return downloadURL;
 
     } catch (e) {
-      print("上传头像失败: $e");
+      print("Upload Failed $e");
       return null;
     }
   }
