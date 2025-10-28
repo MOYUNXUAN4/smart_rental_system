@@ -11,6 +11,8 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 
 class ProfilePage extends StatefulWidget {
+  const ProfilePage({super.key});
+
   @override
   _ProfilePageState createState() => _ProfilePageState();
 }
@@ -65,7 +67,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
   // --- 辅助函数：压缩 (包含日志) ---
   Future<File> _compressImage(File file) async {
-    final dir = await Directory.systemTemp;
+    final dir = Directory.systemTemp;
     final targetPath = '${dir.absolute.path}/${DateTime.now().millisecondsSinceEpoch}.jpg';
     
     final originalLength = await file.length();
@@ -116,7 +118,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
     await FirebaseFirestore.instance
         .collection('users') 
-        .doc(user.uid)        
+        .doc(user.uid) 
         .set({ // 使用 .set 并合并
           'avatarUrl': url,
         }, SetOptions(merge: true)); // merge: true 会保留文档中的其他字段
