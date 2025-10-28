@@ -2,15 +2,21 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
-import 'auth_gate.dart'; // 👈 1. 导入你写的这个文件
+// 1. 我们不再需要导入 AuthGate
+// import 'auth_gate.dart'; 
+// 2. 我们改成导入 HomeScreen
+import 'home_screen.dart'; 
 import 'firebase_options.dart';
 
 void main() async {
+  // 确保 Flutter 绑定已初始化
   WidgetsFlutterBinding.ensureInitialized();
+  // 初始化 Firebase
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  runApp(MyApp());
+  // 运行 App
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
@@ -21,8 +27,11 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Smart Rental System',
       theme: ThemeData(primarySwatch: Colors.blue),
-      // 2. 确保 home 指向 AuthGate()
-      home: AuthGate(), 
+      
+      // 关键修改：
+      // 把 App 的入口从 AuthGate()（登录路由）
+      // 直接改成 HomeScreen()（主页）
+      home: const HomeScreen(), 
     );
   }
 }

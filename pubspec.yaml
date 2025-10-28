@@ -41,3 +41,4 @@ flutter:
   # 资源 (Assets) 路径
   assets:
     - assets/images/my_logo.png
+    - assets/images/mainPageBackGround.png
