@@ -1,14 +1,15 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:smart_rental_system/Screens/add_property_screen.dart';
 
 // 1. 导入所需的 UI 和导航组件
 import '../Compoents/animated_bottom_nav.dart';
 import '../Compoents/user_info_card.dart'; 
 import '../LogIn&Register/login_screen.dart'; 
-import '../account_check_screen.dart';
+import '../account_check_screen.dart'; // 修正：假设在 lib/ 根目录
 import '../home_screen.dart';
-
+import '../Screens/add_property_screen.dart'; // 导入已存在
 
 class LandlordScreen extends StatefulWidget {
   const LandlordScreen({super.key});
@@ -22,7 +23,6 @@ class _LandlordScreenState extends State<LandlordScreen> {
   late Stream<DocumentSnapshot> _userStream;
 
   // 2. 添加底边栏状态
-  // (Landlord/Tenant Dashboard 属于 "My Account" 流程, 索引为 3)
   int _currentNavIndex = 3; 
 
   @override
@@ -56,7 +56,7 @@ class _LandlordScreenState extends State<LandlordScreen> {
     });
   }
 
-  // (您的 _signOut 函数保持不变，写得很好)
+  // (您的 _signOut 函数保持不变)
   Future<void> _signOut(BuildContext context) async {
     final bool? didConfirm = await showDialog<bool>(
       context: context,
@@ -102,25 +102,20 @@ class _LandlordScreenState extends State<LandlordScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // 4. 使 UI 延伸到安全区域之外，以便渐变和底边栏正确显示
       extendBody: true,
       extendBodyBehindAppBar: true, 
-
-      // 5. AppBar 透明化
       appBar: AppBar(
-        backgroundColor: Colors.transparent, // 透明背景
-        elevation: 0, // 移除阴影
+        backgroundColor: Colors.transparent, 
+        elevation: 0, 
         title: const Text('Landlord Dashboard', style: TextStyle(color: Colors.white)),
-        iconTheme: const IconThemeData(color: Colors.white), // 确保返回按钮是白色
+        iconTheme: const IconThemeData(color: Colors.white), 
         actions: [
           IconButton(
-            icon: const Icon(Icons.logout, color: Colors.white), // 确保退出按钮是白色
+            icon: const Icon(Icons.logout, color: Colors.white), 
             onPressed: () => _signOut(context), 
           )
         ],
       ),
-
-      // 6. 添加渐变背景 (包裹在 Stack 中)
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -138,15 +133,12 @@ class _LandlordScreenState extends State<LandlordScreen> {
               ),
             ),
           ),
-
-          // 7. 使用 SafeArea 包装您的内容
           SafeArea(
-            bottom: false, // 底部安全区由底边栏处理
+            bottom: false, 
             child: StreamBuilder<DocumentSnapshot>(
               stream: _userStream,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  // 8. 更新加载和错误提示的颜色
                   return const Center(child: CircularProgressIndicator(color: Colors.white));
                 }
 
@@ -161,7 +153,6 @@ class _LandlordScreenState extends State<LandlordScreen> {
 
                 return Column(
                   children: [
-                    // (您的 UserInfoCard 现在是毛玻璃风格)
                     UserInfoCard(
                       name: name,
                       phone: phone,
@@ -172,7 +163,6 @@ class _LandlordScreenState extends State<LandlordScreen> {
                         child: Text(
                           'You have no properties yet.\nTap the + button to add one.',
                           textAlign: TextAlign.center,
-                          // 8. 更新空状态文本颜色
                           style: TextStyle(fontSize: 18, color: Colors.white70),
                         ),
                       ),
@@ -184,11 +174,9 @@ class _LandlordScreenState extends State<LandlordScreen> {
           ),
         ],
       ),
-
-      // 9. 添加底边栏
       bottomNavigationBar: AnimatedBottomNav(
-        currentIndex: _currentNavIndex, // 使用状态变量
-        onTap: _onNavTap, // 使用处理函数
+        currentIndex: _currentNavIndex, 
+        onTap: _onNavTap, 
         items: const [
           BottomNavItem(icon: Icons.home, label: "Home Page"),
           BottomNavItem(icon: Icons.list, label: "List"),
@@ -197,10 +185,14 @@ class _LandlordScreenState extends State<LandlordScreen> {
         ],
       ),
 
-      // 10. FAB (保持不变)
+      // ✅ 【已修改】: 补充了 FAB 的导航逻辑
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          // TODO: 跳转到添加房源页面
+          // 跳转到添加房源页面
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const AddPropertyScreen()),
+          );
         },
         tooltip: 'Add Property',
         child: const Icon(Icons.add_home_work),
