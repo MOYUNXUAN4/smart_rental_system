@@ -49,6 +49,8 @@ flutter:
   assets:
     - assets/images/my_logo.png
     - assets/images/mainPageBackGround.png
+    - assets/images/fonts/NotoSansSC-Regular.ttf
+    - assets/images/fonts/NotoSans-Regular.ttf
 
   # fonts should have the same 2 spaces indentation
   fonts:
