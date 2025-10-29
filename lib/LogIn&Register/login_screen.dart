@@ -1,12 +1,13 @@
-// lib/login_screen.dart
-
+import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'register_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-// 【修改点 1】: 不再需要导入 HomeScreen 和 cloud_firestore
-// import 'home_screen.dart'; 
-// import 'package:cloud_firestore/cloud_firestore.dart'; 
+// --- 检查导入路径 ---
+import 'register_screen.dart';
+import '../home_screen.dart';
+import '../Compoents/animated_bottom_nav.dart';
+import '../account_check_screen.dart'; 
+// --- 导入结束 ---
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -16,245 +17,278 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  String _selectedType = "Tenant";
-  final TextEditingController _accountController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+
+  String _selectedType = "Tenant"; 
   bool _isLoading = false;
 
-  // --- 【修改点 2】: 极大地简化登录方法 ---
-  Future<void> _loginUser() async {
-    // 检查 widget 是否还在树中
-    if (!mounted) return;
-    setState(() { _isLoading = true; });
-
-    try {
-      // 步骤 1: 只进行登录，不再检查用户类型或手动导航
-      // AuthGate 中的 StreamBuilder 会自动监听这个变化
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: _accountController.text.trim(),
-        password: _passwordController.text.trim(),
-      );
-      
-      // 如果登录成功，AuthGate 会自动处理后续跳转，这里什么都不用做
-      
-    } on FirebaseAuthException catch (e) {
-      // 错误处理逻辑保持不变，这部分做得很好
-      String message = "An error occurred. Please check your credentials.";
-      if (e.code == 'user-not-found' || e.code == 'wrong-password' || e.code == 'invalid-credential') {
-        message = 'Wrong email or password.';
-      } else {
-        message = e.message ?? message;
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message)),
-        );
-      }
-    } catch (e) {
-       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("An error occurred: $e")),
-        );
-       }
-    } finally {
-      // 无论成功失败，最后都停止加载动画
-      if (mounted) {
-        setState(() { _isLoading = false; });
-      }
-    }
-  }
+  // ✅ 【修复 2 - 动画】: 重新引入状态变量，并初始化为 3
+  int _currentNavIndex = 3; 
 
   @override
   void dispose() {
-    _accountController.dispose();
+    _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
+  // ✅ 【修复 1 - 登录导航】: 
+  // 登录成功后，手动导航到 AccountCheckScreen
+  Future<void> _login() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+    try {
+      // 步骤 1: 登录
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+
+      // 步骤 2: 登录成功后，手动导航到 AccountCheckScreen
+      // (这是我们从“点击 Account 按钮”中学到的有效逻辑)
+      if (mounted) {
+        Navigator.pushReplacement( // 使用 pushReplacement 替换登录页
+          context,
+          MaterialPageRoute(builder: (context) => const AccountCheckScreen()),
+        );
+      }
+      
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Login failed: ${e.message ?? "Unknown error"}')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // ✅ 【修复 2 - 动画】: 
+  // 在导航前调用 setState 来更新 _currentNavIndex
+  void _onNavTap(int index) {
+    // 立即更新状态以触发动画
+    setState(() {
+      _currentNavIndex = index;
+    });
+
+    if (index == 0) {
+      // 点击 Home
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
+      );
+    } else if (index == 3) {
+      // 点击 Account (当前页)
+      // 导航到 AccountCheckScreen (允许用户在已登录时刷新状态)
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const AccountCheckScreen()),
+      );
+    }
+    // 其他索引 (List, Favorites) 仅触发动画，不导航
+  }
+
   @override
   Widget build(BuildContext context) {
-    // UI 部分 (build 方法) 不需要任何修改，您的 UI 代码写得很好！
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: Theme.of(context).colorScheme.onPrimaryContainer),
-          onPressed: () { if (Navigator.canPop(context)) Navigator.pop(context); },
-        ),
-        title: Text(
-          "Log in",
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Theme.of(context).colorScheme.onPrimaryContainer,
+      extendBody: true,
+      backgroundColor: const Color(0xFF153a44),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // 背景渐变
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFF153a44),
+                  Color(0xFF295a68),
+                  Color(0xFF5d8fa0),
+                  Color(0xFF94bac4),
+                ],
+              ),
+            ),
           ),
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.notifications, color: Theme.of(context).colorScheme.onPrimaryContainer),
-            onPressed: () { /* TODO */ },
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            minHeight: MediaQuery.of(context).size.height - kToolbarHeight - MediaQuery.of(context).padding.top,
-          ),
-          child: IntrinsicHeight(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
-              child: Card(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                elevation: 4.0,
-                child: Padding(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Spacer(flex: 5),
-                      // 确保你的 'assets/images/my_logo.png' 路径在 pubspec.yaml 中已配置
-                      Image.asset(
-                        'assets/images/my_logo.png',
-                        width: 250, 
-                        height: 250,
-                      ),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: AnimatedScale(
-                              scale: _selectedType == "Landlord" ? 1.1 : 1.0,
-                              duration: const Duration(milliseconds: 300),
-                              child: ElevatedButton(
-                                onPressed: () {
-                                  setState(() { _selectedType = "Landlord"; });
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: _selectedType == "Landlord"
-                                      ? Theme.of(context).colorScheme.primary
-                                      : Theme.of(context).colorScheme.surfaceContainerHighest,
-                                  foregroundColor: _selectedType == "Landlord"
-                                      ? Theme.of(context).colorScheme.onPrimary
-                                      : Theme.of(context).colorScheme.onSurfaceVariant,
-                                  elevation: _selectedType == "Landlord" ? 8.0 : 2.0,
-                                ),
-                                child: const Text("Landlord"),
+          Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(25),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(24.0),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(25),
+                      border: Border.all(color: Colors.white.withOpacity(0.1)),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        
+                        // Logo
+                        Image.asset(
+                          'assets/images/my_logo.png',
+                          width: 200,
+                          height: 200,
+                          errorBuilder: (context, error, stackTrace) => 
+                            const Icon(Icons.image_not_supported, color: Colors.white60, size: 100),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // 用户类型切换
+                        Row(
+                          children: [
+                            _buildUserTypeButton("Landlord"),
+                            const SizedBox(width: 16),
+                            _buildUserTypeButton("Tenant"),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+
+                        // 邮箱
+                        _buildTextField(
+                          controller: _emailController,
+                          hintText: "Email",
+                          icon: Icons.email_outlined,
+                        ),
+                        const SizedBox(height: 16),
+                        
+                        // 密码
+                        _buildTextField(
+                          controller: _passwordController,
+                          hintText: "Password",
+                          icon: Icons.lock_outline,
+                          obscureText: true,
+                        ),
+                        const SizedBox(height: 24),
+
+                        // 登录按钮
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: _isLoading ? null : _login,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF1D5DC7),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
                               ),
                             ),
+                            child: _isLoading
+                                ? const SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 3,
+                                    ),
+                                  )
+                                : const Text("Login",
+                                    style: TextStyle(
+                                        color: Colors.white, fontSize: 16)),
                           ),
-                          const SizedBox(width: 16.0),
-                          Expanded(
-                            child: AnimatedScale(
-                              scale: _selectedType == "Tenant" ? 1.1 : 1.0,
-                              duration: const Duration(milliseconds: 300),
-                              child: ElevatedButton(
-                                onPressed: () {
-                                  setState(() { _selectedType = "Tenant"; });
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: _selectedType == "Tenant"
-                                      ? Theme.of(context).colorScheme.primary
-                                      : Theme.of(context).colorScheme.surfaceContainerHighest,
-                                  foregroundColor: _selectedType == "Tenant"
-                                      ? Theme.of(context).colorScheme.onPrimary
-                                      : Theme.of(context).colorScheme.onSurfaceVariant,
-                                  elevation: _selectedType == "Tenant" ? 8.0 : 2.0,
-                                ),
-                                child: const Text("Tenant"),
-                              ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // 找回密码 / 注册
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            TextButton(
+                              onPressed: () { /* TODO: 实现找回密码 */ },
+                              child: const Text("Find Password", style: TextStyle(color: Colors.white70)),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 24.0),
-                      TextFormField(
-                        controller: _accountController,
-                        decoration: const InputDecoration(
-                          labelText: "Account",
-                          border: OutlineInputBorder(),
-                        ),
-                        keyboardType: TextInputType.emailAddress,
-                      ),
-                      const SizedBox(height: 16.0),
-                      TextFormField(
-                        controller: _passwordController,
-                        obscureText: true,
-                        decoration: const InputDecoration(
-                          labelText: "Password", // 修正拼写：Password
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 24.0),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: _isLoading ? null : _loginUser,
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16.0),
-                            backgroundColor: Theme.of(context).colorScheme.primary,
-                            foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                          ),
-                          child: _isLoading
-                              ? const SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 3,
+                            TextButton(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => RegisterScreen(userType: _selectedType),
                                   ),
-                                )
-                              : const Text(
-                                  "Log in",
-                                  style: TextStyle(fontSize: 18.0),
-                                ),
+                                );
+                              },
+                              child: const Text("Register", style: TextStyle(color: Colors.white)),
+                            ),
+                          ],
                         ),
-                      ),
-                      const SizedBox(height: 16.0),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          TextButton(
-                            onPressed: () { /* TODO: 实现找回密码 */ },
-                            child: const Text("Find Password"), // 修正拼写
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => RegisterScreen(
-                                    // Landlord/Tenant 的选择现在只对注册页有意义
-                                    userType: _selectedType,
-                                  ),
-                                ),
-                              );
-                            },
-                            child: const Text("Register"),
-                          ),
-                        ],
-                      ),
-                      const Spacer(flex: 5),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: Theme.of(context).colorScheme.primary,
-        unselectedItemColor: Theme.of(context).colorScheme.onSurfaceVariant,
-        currentIndex: 3, // 保持在 "My Account"
-        onTap: (index) { /* TODO */ },
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home Page"),
-          BottomNavigationBarItem(icon: Icon(Icons.list), label: "List"),
-          BottomNavigationBarItem(icon: Icon(Icons.star), label: "Favorites"),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: "My Account"),
         ],
+      ),
+      // ✅ 【修复 2 - 动画】: 使用 _currentNavIndex 状态变量
+      bottomNavigationBar: AnimatedBottomNav(
+        currentIndex: _currentNavIndex, 
+        onTap: _onNavTap,
+        items: const [
+          BottomNavItem(icon: Icons.home, label: "Home Page"),
+          BottomNavItem(icon: Icons.list, label: "List"),
+          BottomNavItem(icon: Icons.star, label: "Favorites"),
+          BottomNavItem(icon: Icons.person, label: "My Account"),
+        ],
+      ),
+    );
+  }
+
+  // --- 辅助 Widget (保持不变) ---
+
+  Widget _buildUserTypeButton(String type) {
+    final bool isSelected = _selectedType == type;
+    return Expanded(
+      child: ElevatedButton(
+        onPressed: () {
+          setState(() {
+            _selectedType = type;
+          });
+        },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: isSelected
+              ? Colors.white
+              : Colors.white.withOpacity(0.2),
+          foregroundColor: isSelected
+              ? const Color(0xFF1D5DC7)
+              : Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+          elevation: isSelected ? 8.0 : 2.0,
+        ),
+        child: Text(type),
+      ),
+    );
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String hintText,
+    required IconData icon,
+    bool obscureText = false,
+  }) {
+    return TextField(
+      controller: controller,
+      obscureText: obscureText,
+      style: const TextStyle(color: Colors.white),
+      decoration: InputDecoration(
+        hintText: hintText,
+        hintStyle: TextStyle(color: Colors.white70),
+        prefixIcon: Icon(icon, color: Colors.white70),
+        filled: true,
+        fillColor: Colors.white.withOpacity(0.1),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(20),
+          borderSide: BorderSide.none,
+        ),
       ),
     );
   }

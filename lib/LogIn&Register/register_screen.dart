@@ -1,20 +1,17 @@
-// lib/register_screen.dart
-
+import 'dart:ui'; // 导入毛玻璃效果
 import 'package:flutter/material.dart';
-// --- 1. 导入 Firebase 包 ---
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../home_screen.dart'; // <-- 导入 HomeScreen
 
-// RegisterScreen (StatefulWidget) 保持不变
+// ✅ 导入 AccountCheckScreen 以修复导航
+import '../account_check_screen.dart';
+
 class RegisterScreen extends StatefulWidget {
-  // --- 步骤 1: 添加这个变量来接收数据 ---
   final String userType;
 
-  // --- 步骤 2: 在构造函数中要求传入这个值 ---
   const RegisterScreen({
     super.key,
-    required this.userType, // 告诉 Flutter 这个参数是必须的
+    required this.userType,
   });
 
   @override
@@ -22,14 +19,11 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  // ... (Controllers 保持不变)
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController = TextEditingController();
-
-  // --- 3. 添加一个 loading 状态 ---
   bool _isLoading = false;
 
   @override
@@ -42,293 +36,303 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  // --- 4. 创建 Firebase 注册方法 ---
+  // 注册逻辑
   Future<void> _registerUser() async {
-    // 检查所有控制器是否已挂载
     if (!mounted) return;
+    setState(() => _isLoading = true);
 
-    // a. 开始加载
-    setState(() {
-      _isLoading = true;
-    });
-
-    // b. 验证密码
+    // 1. 验证密码
     if (_passwordController.text != _confirmPasswordController.text) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Passwords do not match!")),
       );
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
       return;
     }
 
     try {
-      // c. 步骤 1: 在 Firebase Auth 中创建用户
+      // 2. 创建 Auth 用户
       UserCredential userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
 
-      // d. 步骤 2: 在 Cloud Firestore 中存储额外信息
+      // 3. 存储 Firestore 信息
       User? user = userCredential.user;
       if (user != null) {
-        // 我们使用 user.uid 作为文档 ID
         await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
           'uid': user.uid,
           'name': _nameController.text.trim(),
           'email': _emailController.text.trim(),
           'phone': _phoneController.text.trim(),
-          'userType': widget.userType, // <-- 成功传入并存储了 userType！
-          'createdAt': Timestamp.now(), // 记录创建时间
+          'userType': widget.userType, // 存储从 LoginScreen 传入的类型
+          'createdAt': Timestamp.now(),
         });
 
-        // --- 5. 这是被修改的部分 ---
+        // 4. ✅ 关键修复：导航到 AccountCheckScreen
         if (mounted) {
-           ScaffoldMessenger.of(context).showSnackBar(
+          ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("Registration Successful! Welcome!")),
           );
-          // 注册成功后，跳转到主页并清除所有旧路由
+          // 清除堆栈并导航到检查器，以显示正确的 Dashboard
           Navigator.pushAndRemoveUntil(
             context,
-            MaterialPageRoute(builder: (context) => const HomeScreen()),
+            MaterialPageRoute(builder: (context) => const AccountCheckScreen()),
             (Route<dynamic> route) => false,
           );
         }
-        // --- 修改结束 ---
       }
     } on FirebaseAuthException catch (e) {
-      // f. 处理 Auth 错误
-      String message;
+      String message = e.message ?? "An unknown error occurred.";
       if (e.code == 'weak-password') {
         message = 'The password provided is too weak.';
       } else if (e.code == 'email-already-in-use') {
         message = 'The account already exists for that email.';
-      } else {
-        message = e.message ?? "An unknown error occurred.";
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
       );
     } catch (e) {
-      // g. 处理其他错误
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("An error occurred: $e")),
       );
     } finally {
-      // h. 停止加载
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      // ✅ 1. 允许 body 延伸到 AppBar 后面
+      extendBodyBehindAppBar: true, 
+      backgroundColor: const Color(0xFF153a44), // 匹配登录页的背景色
+
+      // ✅ 2. 添加透明的 AppBar 以便返回
       appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-        iconTheme: IconThemeData(
-          color: Theme.of(context).colorScheme.onPrimaryContainer,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.of(context).pop(),
         ),
-        title: Text(
-          "Create Account",
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Theme.of(context).colorScheme.onPrimaryContainer,
-          ),
-        ),
-        centerTitle: true,
       ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
-          child: Card(
-            color: Theme.of(context).colorScheme.primaryContainer,
-            elevation: 4.0,
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // 标题
-                  Text(
-                    "Register",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 24.0,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                  const SizedBox(height: 16.0),
 
-                  // --- 步骤 3: 显示继承过来的 userType ---
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton(
-                          // 设置为 null 来禁用按钮
-                          onPressed: null,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: widget.userType == "Landlord"
-                                ? Theme.of(context).colorScheme.primary
-                                : Theme.of(context).colorScheme.surfaceContainerHighest,
-                            foregroundColor: widget.userType == "Landlord"
-                                ? Theme.of(context).colorScheme.onPrimary
-                                : Theme.of(context).colorScheme.onSurfaceVariant,
-                            // 当按钮被禁用时，Flutter 会自动应用一层透明度
-                            disabledBackgroundColor: widget.userType == "Landlord"
-                                ? Theme.of(context).colorScheme.primary.withOpacity(0.5)
-                                : Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
-                             disabledForegroundColor: widget.userType == "Landlord"
-                                ? Theme.of(context).colorScheme.onPrimary.withOpacity(0.5)
-                                : Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
-                          ),
-                          child: const Text("Landlord"),
-                        ),
-                      ),
-                      const SizedBox(width: 16.0),
-                      Expanded(
-                        child: ElevatedButton(
-                          // 设置为 null 来禁用按钮
-                          onPressed: null,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: widget.userType == "Tenant"
-                                ? Theme.of(context).colorScheme.primary
-                                : Theme.of(context).colorScheme.surfaceContainerHighest,
-                            foregroundColor: widget.userType == "Tenant"
-                                ? Theme.of(context).colorScheme.onPrimary
-                                : Theme.of(context).colorScheme.onSurfaceVariant,
-                            disabledBackgroundColor: widget.userType == "Tenant"
-                                ? Theme.of(context).colorScheme.primary.withOpacity(0.5)
-                                : Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
-                             disabledForegroundColor: widget.userType == "Tenant"
-                                ? Theme.of(context).colorScheme.onPrimary.withOpacity(0.5)
-                                : Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
-                          ),
-                          child: const Text("Tenant"),
-                        ),
-                      ),
-                    ],
-                  ),
-                  // --- 继承显示结束 ---
+      // ✅ 3. 移除底边栏
+      // bottomNavigationBar: ... (已移除)
 
-                  const SizedBox(height: 24.0),
-
-                  // "Name" 输入框
-                  TextFormField(
-                    controller: _nameController,
-                    decoration: const InputDecoration(
-                      labelText: "Name",
-                      border: OutlineInputBorder(),
-                    ),
-                    keyboardType: TextInputType.name,
-                    textCapitalization: TextCapitalization.words,
-                  ),
-                  const SizedBox(height: 16.0),
-
-                  // "Email" 输入框
-                  TextFormField(
-                    controller: _emailController,
-                    decoration: const InputDecoration(
-                      labelText: "Email",
-                      border: OutlineInputBorder(),
-                    ),
-                    keyboardType: TextInputType.emailAddress,
-                  ),
-                  const SizedBox(height: 16.0),
-
-                  // "Phone Number" 输入框
-                  TextFormField(
-                    controller: _phoneController,
-                    decoration: const InputDecoration(
-                      labelText: "Phone Number",
-                      border: OutlineInputBorder(),
-                    ),
-                    keyboardType: TextInputType.phone,
-                  ),
-                  const SizedBox(height: 16.0),
-
-                  // "Password" 输入框
-                  TextFormField(
-                    controller: _passwordController,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: "Password",
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 16.0),
-
-                  // "Confirm Password" 输入框
-                  TextFormField(
-                    controller: _confirmPasswordController,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: "Confirm Password",
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 32.0),
-
-                  // 注册按钮
-                  ElevatedButton(
-                    // --- 6. 修改 onPressed 和 child ---
-                    onPressed: _isLoading ? null : _registerUser, // a. 正在加载时禁用按钮
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16.0),
-                    ),
-                    child: _isLoading
-                        ? const CircularProgressIndicator( // b. 显示加载动画
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                          )
-                        : const Text( // c. 显示文字
-                            "Register",
-                            style: TextStyle(fontSize: 18.0),
-                          ),
-                  ),
+      // ✅ 4. 使用与 LoginScreen 相同的毛玻璃 UI 结构
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // 背景渐变
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFF153a44),
+                  Color(0xFF295a68),
+                  Color(0xFF5d8fa0),
+                  Color(0xFF94bac4),
                 ],
               ),
             ),
           ),
-        ),
-      ),
+          Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(25),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(24.0),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(25),
+                      border: Border.all(color: Colors.white.withOpacity(0.1)),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        
+                        // 标题
+                        const Text(
+                          "Create Account",
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 16),
 
-      // 底部导航栏保持不变
-      bottomNavigationBar: BottomNavigationBar(
-        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: Theme.of(context).colorScheme.primary,
-        unselectedItemColor: Theme.of(context).colorScheme.onSurfaceVariant,
-        currentIndex: 3,
-        onTap: (index) {
-          // TODO: 处理底部导航点击事件
-        },
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: "Home Page",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.list),
-            label: "List",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.star),
-            label: "Favorites",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: "My Account",
+                        // 显示选定的用户类型 (不可更改)
+                        _buildUserTypeDisplay(widget.userType),
+                        const SizedBox(height: 24),
+
+                        // 表单字段
+                        _buildTextField(
+                          controller: _nameController,
+                          hintText: "Name",
+                          icon: Icons.person_outline,
+                          keyboardType: TextInputType.name,
+                          textCapitalization: TextCapitalization.words,
+                        ),
+                        const SizedBox(height: 16),
+                        _buildTextField(
+                          controller: _emailController,
+                          hintText: "Email",
+                          icon: Icons.email_outlined,
+                          keyboardType: TextInputType.emailAddress,
+                        ),
+                        const SizedBox(height: 16),
+                        _buildTextField(
+                          controller: _phoneController,
+                          hintText: "Phone Number",
+                          icon: Icons.phone_outlined,
+                          keyboardType: TextInputType.phone,
+                        ),
+                        const SizedBox(height: 16),
+                        _buildTextField(
+                          controller: _passwordController,
+                          hintText: "Password",
+                          icon: Icons.lock_outline,
+                          obscureText: true,
+                        ),
+                        const SizedBox(height: 16),
+                        _buildTextField(
+                          controller: _confirmPasswordController,
+                          hintText: "Confirm Password",
+                          icon: Icons.lock_reset_outlined,
+                          obscureText: true,
+                        ),
+                        const SizedBox(height: 24),
+
+                        // 注册按钮
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: _isLoading ? null : _registerUser,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF1D5DC7),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                            ),
+                            child: _isLoading
+                                ? const SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 3,
+                                    ),
+                                  )
+                                : const Text("Register",
+                                    style: TextStyle(
+                                        color: Colors.white, fontSize: 16)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  // --- 辅助 Widget ---
+
+  // 辅助函数：创建统一样式的输入框
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String hintText,
+    required IconData icon,
+    bool obscureText = false,
+    TextInputType? keyboardType,
+    TextCapitalization textCapitalization = TextCapitalization.none,
+  }) {
+    return TextField(
+      controller: controller,
+      obscureText: obscureText,
+      keyboardType: keyboardType,
+      textCapitalization: textCapitalization,
+      style: const TextStyle(color: Colors.white),
+      decoration: InputDecoration(
+        hintText: hintText,
+        hintStyle: TextStyle(color: Colors.white70),
+        prefixIcon: Icon(icon, color: Colors.white70),
+        filled: true,
+        fillColor: Colors.white.withOpacity(0.1),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(20),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    );
+  }
+
+  // 辅助函数：创建用户类型 *显示* (不可切换)
+  Widget _buildUserTypeDisplay(String type) {
+    return Row(
+      children: [
+        Expanded(
+          child: ElevatedButton(
+            onPressed: null, // 禁用按钮
+            style: ElevatedButton.styleFrom(
+              backgroundColor: type == "Landlord"
+                  ? Colors.white
+                  : Colors.white.withOpacity(0.2),
+              foregroundColor: type == "Landlord"
+                  ? const Color(0xFF1D5DC7)
+                  : Colors.white,
+              disabledBackgroundColor: type == "Landlord"
+                  ? Colors.white.withOpacity(0.8) // 更亮，表示选中
+                  : Colors.white.withOpacity(0.2), // 更暗，表示未选中
+              disabledForegroundColor: type == "Landlord"
+                  ? const Color(0xFF1D5DC7).withOpacity(0.8)
+                  : Colors.white.withOpacity(0.5),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(15),
+              ),
+            ),
+            child: const Text("Landlord"),
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: ElevatedButton(
+            onPressed: null, // 禁用按钮
+            style: ElevatedButton.styleFrom(
+              backgroundColor: type == "Tenant"
+                  ? Colors.white
+                  : Colors.white.withOpacity(0.2),
+              foregroundColor: type == "Tenant"
+                  ? const Color(0xFF1D5DC7)
+                  : Colors.white,
+              disabledBackgroundColor: type == "Tenant"
+                  ? Colors.white.withOpacity(0.8)
+                  : Colors.white.withOpacity(0.2),
+              disabledForegroundColor: type == "Tenant"
+                  ? const Color(0xFF1D5DC7).withOpacity(0.8)
+                  : Colors.white.withOpacity(0.5),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(15),
+              ),
+            ),
+            child: const Text("Tenant"),
+          ),
+        ),
+      ],
     );
   }
 }

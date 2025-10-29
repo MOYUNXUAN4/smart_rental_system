@@ -1,9 +1,12 @@
-// lib/home_screen.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; 
+
+// 导入核心组件和页面
 import 'LogIn&Register/login_screen.dart';
-import 'Compoents/animated_bottom_nav.dart'; // 导入底部导航栏组件
+import 'Compoents/animated_bottom_nav.dart'; 
+import '/account_check_screen.dart'; 
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -13,23 +16,20 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final String _backgroundImagePath = 'assets/images/mainPageBackGround.png';
-  final String _smallImagePath = 'assets/images/mainPageBackGround.png'; // 使用现有图片
+  final String _smallImagePath = 'assets/images/mainPageBackGround.png'; 
   int _bottomIndex = 0;
 
-  Future<void> _signOut() async {
-    try {
-      await FirebaseAuth.instance.signOut();
-      if (!mounted) return;
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (context) => const LoginScreen()),
-        (Route<dynamic> route) => false,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error signing out: $e')),
-      );
+  late Stream<DocumentSnapshot> _userStream; 
+  final String? _uid = FirebaseAuth.instance.currentUser?.uid;
+  static const int _accountTabIndex = 3; 
+
+  @override
+  void initState() {
+    super.initState();
+    if (_uid != null) {
+      _userStream = FirebaseFirestore.instance.collection('users').doc(_uid).snapshots();
+    } else {
+      _userStream = Stream.error("User not logged in");
     }
   }
 
@@ -40,11 +40,26 @@ class _HomeScreenState extends State<HomeScreen> {
     _NavItemData(icon: Icons.person, label: 'Account'),
   ];
 
+  void _goToAccount() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const AccountCheckScreen()),
+    );
+  }
+  
+  void _onBottomNavTap(int index) {
+    if (index == _accountTabIndex) {
+      _goToAccount(); 
+    } else {
+      setState(() {
+        _bottomIndex = index;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     const Color imageDissolveColor = Color(0xFF153a44);
-    
-
     final double appBarImageHeight = MediaQuery.of(context).size.height * 0.25;
     const double searchBarHeight = 54.0;
     const double searchBarVerticalPadding = 16.0;
@@ -81,12 +96,67 @@ class _HomeScreenState extends State<HomeScreen> {
                   icon: const Icon(Icons.notifications, color: Colors.white),
                   onPressed: () {},
                 ),
-                IconButton(
-                  icon: const Icon(Icons.logout, color: Colors.white),
-                  tooltip: 'Log Out',
-                  onPressed: _signOut,
+                
+                StreamBuilder<DocumentSnapshot>(
+                  stream: _userStream,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Padding(
+                        padding: EdgeInsets.all(14.0), 
+                        child: SizedBox(
+                          width: 20, 
+                          height: 20, 
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
+                        ),
+                      );
+                    }
+                    
+                    if (!snapshot.hasData || snapshot.hasError) {
+                      return IconButton(
+                        icon: const Icon(Icons.person_outline, color: Colors.white),
+                        tooltip: 'My Account',
+                        onPressed: _goToAccount, 
+                      );
+                    }
+                    
+                    final userData = snapshot.data!.data() as Map<String, dynamic>;
+                    final String name = (userData['name'] ?? 'User').split(' ').first; 
+                    final String? avatarUrl = userData['avatarUrl'];
+
+                    return GestureDetector(
+                      onTap: _goToAccount, 
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 16.0, left: 8.0),
+                        child: Row(
+                          children: [
+                            Text(
+                              name,
+                              style: const TextStyle(
+                                color: Colors.white, 
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            CircleAvatar(
+                              radius: 18,
+                              backgroundColor: Colors.white.withOpacity(0.2),
+                              backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
+                                ? NetworkImage(avatarUrl)
+                                : null,
+                              child: (avatarUrl == null || avatarUrl.isEmpty)
+                                ? const Icon(Icons.person, size: 20, color: Colors.white70)
+                                : null,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
                 ),
-              ],
+              ], // <-- 'actions' 列表在这里结束
+
+              // ✅ 【已修复】: flexibleSpace 已被移到 SliverAppBar 的内部
               flexibleSpace: FlexibleSpaceBar(
                 background: Stack(
                   fit: StackFit.expand,
@@ -178,7 +248,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               ),
-            ),
+            ), // <-- SliverAppBar 在这里结束
+
             SliverList(
               delegate: SliverChildListDelegate([
                 const SizedBox(height: 8),
@@ -187,10 +258,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
-                      _buildActionButton(context, Icons.search, "Search"),
-                      _buildActionButton(context, Icons.list_alt, "List"),
-                      _buildActionButton(context, Icons.star, "Favorites"),
-                      _buildActionButton(context, Icons.person, "My Account"),
+                      _buildActionButton(context, Icons.search, "Search", () => debugPrint("Search clicked!")),
+                      _buildActionButton(context, Icons.list_alt, "List", () => debugPrint("List clicked!")),
+                      _buildActionButton(context, Icons.star, "Favorites", () => debugPrint("Favorites clicked!")),
+                      _buildActionButton(context, Icons.person, "My Account", _goToAccount),
                     ],
                   ),
                 ),
@@ -212,7 +283,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 24.0),
-                SizedBox(height: MediaQuery.of(context).size.height * 0.2),
+                SizedBox(height: MediaQuery.of(context).size.height * 0.15),
               ]),
             ),
           ],
@@ -220,17 +291,14 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       bottomNavigationBar: AnimatedBottomNav(
         currentIndex: _bottomIndex,
-        onTap: (index) {
-          setState(() {
-            _bottomIndex = index;
-          });
-        },
+        onTap: _onBottomNavTap, 
         items: _navItems.map((e) => BottomNavItem(icon: e.icon, label: e.label)).toList(),
       ),
     );
   }
 
-  Widget _buildActionButton(BuildContext context, IconData icon, String label) {
+  // ... (所有 _build... 辅助函数保持不变) ...
+  Widget _buildActionButton(BuildContext context, IconData icon, String label, VoidCallback onTapAction) {
     return Column(
       children: [
         Material(
@@ -239,7 +307,7 @@ class _HomeScreenState extends State<HomeScreen> {
           elevation: 4,
           child: InkWell(
             borderRadius: BorderRadius.circular(15.0),
-            onTap: () => debugPrint("$label clicked!"),
+            onTap: onTapAction, 
             child: Padding(
               padding: const EdgeInsets.all(12.0),
               child: Icon(icon, size: 30, color: const Color(0xFF194652)),
@@ -367,6 +435,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+// 辅助类
 class _NavItemData {
   final IconData icon;
   final String label;

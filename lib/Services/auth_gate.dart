@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../LogIn&Register/login_screen.dart';
-import '../landlord_screen.dart';
+import '../LogIn&Register/landlord_screen.dart';
 import '../LogIn&Register/tenant_screen.dart';
 
 class AuthGate extends StatelessWidget {
@@ -15,7 +15,7 @@ class AuthGate extends StatelessWidget {
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
-          return LoginScreen(); 
+          return const LoginScreen();
         }
         return UserTypeDispatcher(user: snapshot.data!);
       },
@@ -30,21 +30,22 @@ class UserTypeDispatcher extends StatelessWidget {
 
   Future<String> _getUserType() async {
     try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users') 
-          .doc(user.uid)
-          .get();
+      final docRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
+      final doc = await docRef.get();
 
       if (doc.exists && doc.data() != null) {
         final userType = doc.data()!['userType'] ?? 'unknown';
-        
-        // ---【诊断日志 1】---
-        print("UserType from DB: '$userType'"); 
-        
+        print("UserType from DB: '$userType'");
         return userType;
       } else {
-        print("User document not found (UID: ${user.uid})");
-        return 'unknown';
+        // 用户文档不存在，自动创建默认类型（这里默认 Tenant，可根据实际调整）
+        await docRef.set({
+          'userType': 'Tenant',
+          'email': user.email,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        print("User document created for UID: ${user.uid}, default type: Tenant");
+        return 'Tenant';
       }
     } catch (e) {
       print('Get UserType failed: $e');
@@ -58,7 +59,7 @@ class UserTypeDispatcher extends StatelessWidget {
       future: _getUserType(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return Scaffold(
+          return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
@@ -70,16 +71,12 @@ class UserTypeDispatcher extends StatelessWidget {
         }
 
         final userType = snapshot.data;
-
-        // ---【诊断日志 2】---
         print("Checking userType: '$userType'");
-        print("Comparing with 'Landlord': ${userType == 'Landlord'}");
-        print("Comparing with 'Tenant': ${userType == 'Tenant'}");
 
         if (userType == 'Landlord') {
-          return LandlordScreen();
+          return const LandlordScreen();
         } else if (userType == 'Tenant') {
-          return TenantScreen();
+          return const TenantScreen();
         } else {
           return Scaffold(
             body: Center(
@@ -88,9 +85,9 @@ class UserTypeDispatcher extends StatelessWidget {
                 children: [
                   Text('Unknown user type: $userType'),
                   ElevatedButton(
-                    child: Text('Sign Out'),
+                    child: const Text('Sign Out'),
                     onPressed: () => FirebaseAuth.instance.signOut(),
-                  )
+                  ),
                 ],
               ),
             ),
