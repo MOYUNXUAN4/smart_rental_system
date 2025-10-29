@@ -11,34 +11,57 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Firebase 核心服务
+  # 🔥 Firebase 核心依赖
   firebase_core: ^4.2.0
   firebase_auth: ^6.1.1
   cloud_firestore: ^6.0.3
-
-  # Firebase 存储 (用于上传图片)
   firebase_storage: ^13.0.3
 
-  # 图片选择器 (用于从相册选图)
-  image_picker: ^1.1.2
+  # 🖼️ 图片与文件处理
+  image_picker: ^1.2.0
+  file_picker: ^10.3.3
+  flutter_image_compress: ^2.2.0
 
-  flutter_image_compress: ^2.1.0 # (或 pub.dev 上的最新版本)
-
-  cupertino_icons: ^1.0.8
+  # 🌍 国际化与工具
+  intl: ^0.18.1
   path_provider: ^2.1.5
-  
- 
+
+  # 📄 PDF 生成 + 打印 + 电子签名
+  pdf: ^3.11.0
+  printing: ^5.11.0
+  signature: ^6.3.0
+  open_file: ^3.5.10
+
+  # 💠 UI 基础图标
+  cupertino_icons: ^1.0.8
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  
   flutter_lints: ^5.0.0
 
 flutter:
+
+  # uses-material-design should have 2 spaces indentation
   uses-material-design: true
-  
-  # 资源 (Assets) 路径
+
+  # assets should have the same 2 spaces indentation
   assets:
     - assets/images/my_logo.png
     - assets/images/mainPageBackGround.png
+
+  # fonts should have the same 2 spaces indentation
+  fonts:
+    # The list item '-' should have 4 spaces indentation
+    - family: NotoSans  # 'family' should have 6 spaces indentation
+      # This nested 'fonts' should have 6 spaces indentation
+      fonts:
+        # The nested list item '-' should have 8 spaces indentation
+        - asset: assets/images/fonts/NotoSans-Regular.ttf # 'asset' should have 10 spaces
+          # Optional weight/style would also have 10 spaces
+          # weight: 400
+          # style: normal
+    # If you had another font family, its '-' would start at 4 spaces again
+    # - family: AnotherFont
+    #   fonts:
+    #     - asset: assets/fonts/AnotherFont-Regular.ttf
