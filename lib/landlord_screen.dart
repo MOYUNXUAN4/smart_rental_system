@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 // 1. 【更改】导入我们可重用的卡片
-import 'user_info_card.dart'; 
+import 'Compoents/user_info_card.dart'; 
 // 2. 【移除】不再需要 profile_page.dart
 // import 'profile_page.dart'; 
 

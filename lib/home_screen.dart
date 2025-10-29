@@ -2,8 +2,8 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'login_screen.dart';
-import 'animated_bottom_nav.dart'; // 导入底部导航栏组件
+import 'LogIn&Register/login_screen.dart';
+import 'Compoents/animated_bottom_nav.dart'; // 导入底部导航栏组件
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -43,8 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     const Color imageDissolveColor = Color(0xFF153a44);
-    const Color bottomNavStart = Color(0xFF1C315E);
-    const Color bottomNavEnd = Color(0xFF3B73C0);
+    
 
     final double appBarImageHeight = MediaQuery.of(context).size.height * 0.25;
     const double searchBarHeight = 54.0;

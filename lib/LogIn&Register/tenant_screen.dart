@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'user_info_card.dart'; // 👈 导入卡片
+import '../Compoents/user_info_card.dart'; // 👈 导入卡片
 
 class TenantScreen extends StatefulWidget {
   const TenantScreen({super.key});

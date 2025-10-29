@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 // import 'auth_gate.dart'; 
 // 2. 我们改成导入 HomeScreen
 import 'home_screen.dart'; 
-import 'firebase_options.dart';
+import 'Services/firebase_options.dart';
 
 void main() async {
   // 确保 Flutter 绑定已初始化

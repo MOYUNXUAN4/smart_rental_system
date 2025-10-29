@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 // --- 1. 导入 Firebase 包 ---
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'home_screen.dart'; // <-- 导入 HomeScreen
+import '../home_screen.dart'; // <-- 导入 HomeScreen
 
 // RegisterScreen (StatefulWidget) 保持不变
 class RegisterScreen extends StatefulWidget {
