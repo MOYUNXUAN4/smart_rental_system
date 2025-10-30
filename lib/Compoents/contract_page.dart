@@ -1,6 +1,8 @@
 // lib/Compoents/contract_page.dart
 import 'package:flutter/material.dart';
 import 'contract_generator.dart';
+import 'dart:io';
+import 'package:open_file/open_file.dart';
 
 class ContractPage extends StatefulWidget {
   const ContractPage({super.key});
@@ -21,24 +23,37 @@ class _ContractPageState extends State<ContractPage> {
   final String startDate = "2025-11-01";
   final String endDate = "2026-10-31";
 
-  Future<void> _generateAndOpenPDF() async {
-    setState(() => _isGenerating = true);
-    try {
-      await ContractGenerator.generateAndOpenContract(
-        landlordName: landlordName,
-        tenantName: tenantName,
-        propertyAddress: propertyAddress,
-        rentAmount: rentAmount,
-        startDate: startDate,
-        endDate: endDate,
-        language: _selectedLanguage,
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ 生成失败: $e')));
-    } finally {
-      setState(() => _isGenerating = false);
-    }
+ // lib/Compoents/contract_page.dart
+
+// ... (build 方法和变量保持不变) ...
+
+// ✅ 2. 替换这个函数
+Future<void> _generateAndOpenPDF() async {
+  setState(() => _isGenerating = true);
+  try {
+    // 步骤 1: 调用新的函数名 (generateAndSaveContract)
+    // 并接收返回的 File 对象
+    final File generatedFile = await ContractGenerator.generateAndSaveContract(
+      landlordName: landlordName,
+      tenantName: tenantName,
+      propertyAddress: propertyAddress,
+      rentAmount: rentAmount,
+      startDate: startDate,
+      endDate: endDate,
+      language: _selectedLanguage,
+    );
+
+    // 步骤 2: 手动打开已保存的文件
+    await OpenFile.open(generatedFile.path);
+
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ 生成失败: $e')));
+  } finally {
+    setState(() => _isGenerating = false);
   }
+}
+
+// ... (build 方法保持不变) ...
 
   @override
   Widget build(BuildContext context) {
