@@ -1,8 +1,12 @@
-import 'dart:ui'; // 1. 导入毛玻璃效果
+import 'dart:ui'; 
 import 'package:flutter/material.dart';
 import '../Services/storage_service.dart'; 
+// ✅ 1. 导入 cloud_firestore 和 firebase_auth (用于更新)
+// （虽然 storage_service 做了，但最佳实践是在调用处也获取引用）
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-// ... (StatefulWidget, State, 和 _storageService 保持不变) ...
+
 class UserInfoCard extends StatefulWidget {
   final String name;
   final String phone;
@@ -23,13 +27,24 @@ class _UserInfoCardState extends State<UserInfoCard> {
   final StorageService _storageService = StorageService();
   bool _isUploading = false;
 
+  // ✅ 2. 【已修改】 _pickAndUploadAvatar
   Future<void> _pickAndUploadAvatar() async {
     setState(() {
       _isUploading = true;
     });
 
     try {
-      await _storageService.uploadAvatarAndGetURL();
+      // 步骤 1: 调用 Service 上传并获取新的 URL
+      // (您的 storage_service 已经正确地在内部更新了 Firestore)
+      final String? newUrl = await _storageService.uploadAvatarAndGetURL();
+      
+      // 步骤 2: 【关键修复】如果成功，清除本地的图片缓存
+      if (newUrl != null && mounted) {
+        // 这会强制 Image.network 在下次构建时重新下载图片
+        await NetworkImage(newUrl).evict(); 
+        print("Image cache evicted for: $newUrl");
+      }
+
     } catch (e) {
       print("上传失败: $e");
       if (mounted) {
@@ -48,38 +63,36 @@ class _UserInfoCardState extends State<UserInfoCard> {
 
   @override
   Widget build(BuildContext context) {
-    // 2. 移除 Card, 替换为毛玻璃 UI
+    // (build 方法保持不变)
     return Padding(
-      padding: const EdgeInsets.all(16.0), // 保持外边距
+      padding: const EdgeInsets.all(16.0), 
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(20), // 圆角
+        borderRadius: BorderRadius.circular(20), 
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10.0, sigmaY: 10.0), // 模糊效果
+          filter: ImageFilter.blur(sigmaX: 10.0, sigmaY: 10.0), 
           child: Container(
-            padding: const EdgeInsets.all(16.0), // 内部填充
+            padding: const EdgeInsets.all(16.0), 
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.15), // 半透明白色
+              color: Colors.white.withOpacity(0.15), 
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white.withOpacity(0.2)), // 细边框
+              border: Border.all(color: Colors.white.withOpacity(0.2)), 
             ),
-            // 3. Row 内部的上传和文本逻辑保持不变
             child: Row(
               children: [
                 Stack(
                   alignment: Alignment.bottomRight, 
                   children: [
-                    // 4. 更新头像的背景和默认图标颜色
                     CircleAvatar(
                       radius: 35,
-                      backgroundColor: Colors.white.withOpacity(0.1), // 更新背景
+                      backgroundColor: Colors.white.withOpacity(0.1), 
                       backgroundImage: (widget.avatarUrl != null && widget.avatarUrl!.isNotEmpty)
-                          ? NetworkImage(widget.avatarUrl!)
+                          ? NetworkImage(widget.avatarUrl!) // 👈 StreamBuilder 重建时会触发这个
                           : null,
                       child: (widget.avatarUrl == null || widget.avatarUrl!.isEmpty)
                           ? Icon(
                               Icons.person,
                               size: 40,
-                              color: Colors.white70, // 更新图标颜色
+                              color: Colors.white70, 
                             )
                           : null,
                     ),
@@ -87,13 +100,13 @@ class _UserInfoCardState extends State<UserInfoCard> {
                         ? const SizedBox(
                             width: 24,
                             height: 24,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white), // 更新加载圈颜色
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white), 
                           )
                         : GestureDetector(
                             onTap: _pickAndUploadAvatar, 
                             child: CircleAvatar(
                               radius: 12,
-                              backgroundColor: const Color(0xFF1D5DC7), // 保持按钮颜色
+                              backgroundColor: const Color(0xFF1D5DC7), 
                               child: const Icon(
                                 Icons.camera_alt_rounded,
                                 size: 14,
@@ -103,10 +116,7 @@ class _UserInfoCardState extends State<UserInfoCard> {
                           ),
                   ],
                 ),
-
                 const SizedBox(width: 20), 
-
-                // 5. 更新右侧文本和图标的颜色
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -116,7 +126,7 @@ class _UserInfoCardState extends State<UserInfoCard> {
                         style: const TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
-                          color: Colors.white, // 更新文本颜色
+                          color: Colors.white, 
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -124,13 +134,13 @@ class _UserInfoCardState extends State<UserInfoCard> {
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          Icon(Icons.phone, size: 16, color: Colors.white70), // 更新图标颜色
+                          Icon(Icons.phone, size: 16, color: Colors.white70), 
                           const SizedBox(width: 8),
                           Text(
                             widget.phone,
                             style: TextStyle(
                               fontSize: 16,
-                              color: Colors.white70, // 更新文本颜色
+                              color: Colors.white70, 
                             ),
                           ),
                         ],

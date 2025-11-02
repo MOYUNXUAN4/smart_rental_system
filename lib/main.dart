@@ -1,6 +1,7 @@
 // lib/main.dart
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:smart_rental_system/Screens/add_property_screen.dart';
 import 'package:smart_rental_system/home_screen.dart';
 
 // 导入我们测试合同生成的界面
@@ -26,7 +27,7 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(primarySwatch: Colors.blue),
       
       // 直接跳转到合同测试页面
-      home: const HomeScreen(),
+      home: const HomeScreen()
     );
   }
 }

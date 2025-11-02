@@ -1,19 +1,21 @@
 import 'dart:io';
 import 'dart:ui';
-
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:open_file/open_file.dart';
 
-import '../Compoents/contract_generator.dart';
+import '../Compoents/contract_generator.dart'; 
 
 class AddPropertyScreen extends StatefulWidget {
-  const AddPropertyScreen({super.key});
+  // ✅ 1. 接收可选的 propertyId
+  final String? propertyId;
+
+  const AddPropertyScreen({super.key, this.propertyId});
 
   @override
   State<AddPropertyScreen> createState() => _AddPropertyScreenState();
@@ -29,6 +31,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   final _sizeController = TextEditingController();
   final _floorController = TextEditingController();
   final _unitController = TextEditingController();
+  
   bool _isLoading = false;
   List<XFile> _selectedImages = [];
   File? _selectedContract;
@@ -47,6 +50,12 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   List<String> _communityList = [];
   String? _selectedCommunity;
   bool _isCommunityListLoading = true;
+  
+  // ✅ 2. 添加 "编辑模式" 检查器和旧数据持有者
+  bool get _isEditMode => widget.propertyId != null;
+  Map<String, dynamic> _existingPropertyData = {}; // 用于存储旧数据 (例如图片URL)
+
+
   final List<String> _furnishingOptions = [
     'Fully Furnished', 'Half Furnished', 'Unfurnished'
   ];
@@ -64,14 +73,14 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     super.initState();
     _fetchLandlordName(); 
     _fetchCommunities(); 
+    
+    // ✅ 3. 如果是编辑模式，加载数据
+    if (_isEditMode) {
+      _loadPropertyData();
+    }
   }
   
-  // (所有函数 _fetchLandlordName, _fetchCommunities, dispose, 
-  // _pickImages, _pickContract, _generateContract, _selectDate, 
-  // _showConfirmDialog, _submitProperty, _uploadImages, _uploadContract, 
-  // _showNumberSliderDialog 保持不变)
-
-  Future<void> _fetchLandlordName() async { /* (保持不变) */ 
+  Future<void> _fetchLandlordName() async { 
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
@@ -85,7 +94,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     }
   }
 
-  Future<void> _fetchCommunities() async { /* (保持不变) */ 
+  Future<void> _fetchCommunities() async { 
     try {
       final snapshot = await FirebaseFirestore.instance.collection('communities').get();
       final communities = snapshot.docs.map((doc) => doc.data()['name'] as String).toList();
@@ -107,8 +116,56 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     }
   }
 
+  // ✅ 4. 【新函数】: 加载已有房源数据
+  Future<void> _loadPropertyData() async {
+    if (!_isEditMode) return;
+    setState(() => _isLoading = true); // 开始加载
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('properties')
+          .doc(widget.propertyId!)
+          .get();
+
+      if (doc.exists && mounted) {
+        final data = doc.data() as Map<String, dynamic>;
+        _existingPropertyData = data; // 存储旧数据，用于删除 storage
+
+        // 预填充所有字段
+        _priceController.text = (data['price'] ?? 0.0).toStringAsFixed(0);
+        _descriptionController.text = data['description'] ?? '';
+        _sizeController.text = data['size_sqft'] ?? '';
+        _floorController.text = data['floor'] ?? '';
+        _unitController.text = data['unitNumber'] ?? '';
+
+        setState(() {
+          _selectedCommunity = data['communityName'];
+          _bedrooms = data['bedrooms'] ?? 1;
+          _bathrooms = data['bathrooms'] ?? 1;
+          _parking = data['parking'] ?? 0;
+          _airConditioners = data['airConditioners'] ?? 0;
+          _selectedFurnishing = data['furnishing'] ?? 'Unfurnished';
+          _selectedFeatures = Set<String>.from(data['features'] ?? []);
+          _selectedFacilities = Set<String>.from(data['facilities'] ?? []);
+          _selectedDate = (data['availableDate'] as Timestamp?)?.toDate();
+          // 注意：我们不加载 _selectedImages 或 _selectedContract
+          // _buildImagePicker 和 _buildContractPicker 会处理 UI 显示
+        });
+      }
+    } catch (e) {
+      print("Error loading property data: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load property data: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false); // 结束加载
+    }
+  }
+
+
   @override
-  void dispose() { /* (保持不变) */ 
+  void dispose() { 
     _floorController.dispose(); 
     _unitController.dispose(); 
     _priceController.dispose();
@@ -117,7 +174,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     super.dispose();
   }
 
-  Future<void> _pickImages() async { /* (保持不变) */ 
+  // --- (图片/合同/日期选择, 弹窗等函数) ---
+  Future<void> _pickImages() async { 
     final ImagePicker picker = ImagePicker();
     final List<XFile> images = await picker.pickMultiImage(imageQuality: 70, maxWidth: 1024);
     if (images.isNotEmpty) {
@@ -125,7 +183,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     }
   }
 
-  Future<void> _pickContract() async { /* (保持不变) */ 
+  Future<void> _pickContract() async { 
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom, allowedExtensions: ['pdf']);
 
@@ -138,7 +196,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     }
   }
   
-  Future<void> _generateContract() async { /* (保持不变) */ 
+  Future<void> _generateContract() async { 
     if (_selectedCommunity == null) {
        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a community first.'))); return;
     }
@@ -188,7 +246,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     }
   }
 
-  Future<void> _selectDate(BuildContext context) async { /* (保持不变) */ 
+  Future<void> _selectDate(BuildContext context) async { 
     final DateTime? picked = await showDatePicker(
       context: context, initialDate: _selectedDate ?? DateTime.now(),
       firstDate: DateTime.now(), lastDate: DateTime(2101),
@@ -198,27 +256,36 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     }
   }
 
-  Future<void> _showConfirmDialog() async { /* (保持不变) */ 
+  // ✅ 5. 修改 _showConfirmDialog 以支持两种模式
+  Future<void> _showConfirmDialog() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Confirm Upload"),
-        content: const Text("Are you sure you want to upload this property?"),
+        title: Text(_isEditMode ? "Confirm Changes" : "Confirm Upload"), // 动态标题
+        content: Text("Are you sure you want to ${_isEditMode ? 'save changes' : 'upload this property'}?"), // 动态内容
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
           ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text("Confirm")),
         ],
       ),
     );
-    if (confirmed == true) await _submitProperty();
+    if (confirmed == true) {
+      // ✅ 6. 根据模式调用不同的保存函数
+      if (_isEditMode) {
+        await _updateProperty();
+      } else {
+        await _addProperty();
+      }
+    }
   }
 
-  Future<void> _submitProperty() async { /* (保持不变) */ 
+  // ✅ 7. 将 _submitProperty 重命名为 _addProperty (用于添加新房源)
+  Future<void> _addProperty() async { 
     if (!_formKey.currentState!.validate()) return;
     if (_selectedCommunity == null) { 
        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a community.'))); return;
     }
-    if (_selectedImages.isEmpty) { 
+    if (_selectedImages.isEmpty) { // 添加时必须有图片
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select at least one property image.'))); return;
     }
     if (_selectedDate == null) { 
@@ -248,21 +315,161 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Property Uploaded Successfully!')));
+        setState(() => _isLoading = false); 
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Property Added Successfully!')));
         Navigator.of(context).pop(); 
       }
     } catch (e) {
       print("添加房产失败: $e");
       if (mounted) {
-        // ✅ 错误提示现在会显示 Firebase 错误
+        setState(() => _isLoading = false); 
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ Failed to add property: $e')));
       }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+  
+  // ✅ 8. 【新函数】: 用于更新现有房源
+  Future<void> _updateProperty() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_selectedCommunity == null) { 
+       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a community.'))); return;
+    }
+    if (_selectedDate == null) { 
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select the available date.'))); return;
+    }
+    // (编辑时，图片和合同可以为空，表示不更改)
+
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+
+    try {
+      // 准备一个 Map 来存储需要更新的数据
+      Map<String, dynamic> updateData = {
+        'communityName': _selectedCommunity, 
+        'floor': _floorController.text.trim(), 
+        'unitNumber': _unitController.text.trim(),
+        'price': double.tryParse(_priceController.text.trim()) ?? 0.0,
+        'description': _descriptionController.text.trim(), 
+        'size_sqft': _sizeController.text.trim(),
+        'bedrooms': _bedrooms, 'bathrooms': _bathrooms, 'parking': _parking,
+        'airConditioners': _airConditioners, 'furnishing': _selectedFurnishing,
+        'availableDate': Timestamp.fromDate(_selectedDate!),
+        'features': _selectedFeatures.toList(), 
+        'facilities': _selectedFacilities.toList(),
+      };
+
+      // 检查是否上传了新图片
+      if (_selectedImages.isNotEmpty) {
+        // (在真实应用中，我们还应该删除 _existingPropertyData['imageUrls'] 中的旧图片)
+        final imageUrls = await _uploadImages(_selectedImages);
+        updateData['imageUrls'] = imageUrls;
+      }
+      
+      // 检查是否上传了新合同
+      if (_selectedContract != null) {
+        // (在真实应用中，我们还应该删除 _existingPropertyData['contractUrl'])
+        final contractUrl = await _uploadContract(_selectedContract!);
+        updateData['contractUrl'] = contractUrl;
+      }
+
+      // 执行更新
+      await FirebaseFirestore.instance
+          .collection('properties')
+          .doc(widget.propertyId!)
+          .update(updateData);
+
+      if (mounted) {
+        setState(() => _isLoading = false); 
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Property Updated Successfully!')));
+        Navigator.of(context).pop(); 
+      }
+    } catch (e) {
+      print("更新房产失败: $e");
+      if (mounted) {
+        setState(() => _isLoading = false); 
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ Failed to update property: $e')));
+      }
     }
   }
 
-  Future<List<String>> _uploadImages(List<XFile> images) async { /* (保持不变) */ 
+  // ✅ 9. 【新函数】: 删除房源
+  Future<void> _deleteProperty() async {
+    final bool? didConfirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Delete Property'),
+          content: const Text('Are you sure you want to permanently delete this property? This action cannot be undone.'),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () => Navigator.of(context).pop(false),
+            ),
+            TextButton( // 使用红色以示警告
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Delete'),
+              onPressed: () => Navigator.of(context).pop(true),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (didConfirm != true) return; // 用户取消
+
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+
+    try {
+      final storage = FirebaseStorage.instance;
+      
+      // 1. 删除旧合同 (如果存在)
+      if (_existingPropertyData['contractUrl'] != null && _existingPropertyData['contractUrl'].isNotEmpty) {
+        try {
+          await storage.refFromURL(_existingPropertyData['contractUrl']).delete();
+        } catch (e) {
+          print("Note: Failed to delete old contract, it might not exist: $e");
+        }
+      }
+
+      // 2. 删除旧图片 (如果存在)
+      if (_existingPropertyData['imageUrls'] != null) {
+        final List<String> oldUrls = List<String>.from(_existingPropertyData['imageUrls']);
+        for (final url in oldUrls) {
+          if (url.isNotEmpty) {
+             try {
+              await storage.refFromURL(url).delete();
+            } catch (e) {
+              print("Note: Failed to delete old image, it might not exist: $e");
+            }
+          }
+        }
+      }
+
+      // 3. 删除 Firestore 文档
+      await FirebaseFirestore.instance
+          .collection('properties')
+          .doc(widget.propertyId!)
+          .delete();
+          
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Property Deleted Successfully!')));
+        Navigator.of(context).pop(); // 返回 LandlordScreen
+      }
+
+    } catch (e) {
+      print("删除房产失败: $e");
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ Failed to delete property: $e')));
+      }
+    }
+  }
+
+
+  // --- (上传函数 uploadImages, uploadContract 保持不变) ---
+  Future<List<String>> _uploadImages(List<XFile> images) async { 
     final storage = FirebaseStorage.instance;
     List<String> urls = [];
     for (final img in images) {
@@ -276,7 +483,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     return urls;
   }
 
-  Future<String> _uploadContract(File contract) async { /* (保持不变) */ 
+  Future<String> _uploadContract(File contract) async { 
     final storage = FirebaseStorage.instance;
     final fileName = 'contracts/${DateTime.now().millisecondsSinceEpoch}_${_selectedContractName ?? "contract.pdf"}';
     final ref = storage.ref().child(fileName);
@@ -284,7 +491,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     return await ref.getDownloadURL();
   }
 
-  Future<void> _showNumberSliderDialog({ /* (保持不变) */ 
+  // --- (滑块弹窗 _showNumberSliderDialog 保持不变) ---
+  Future<void> _showNumberSliderDialog({ 
     required String title, required int currentValue, required Function(int) onConfirm,
   }) async {
     int tempValue = currentValue;
@@ -363,8 +571,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     );
   }
 
-  // --- UI 构建辅助 ---
-  Widget _buildGlassCard({required Widget child}) { /* (保持不变) */ 
+
+  // --- 10. 【UI 构建辅助函数】 ---
+  // (所有 _build... 函数现在都已实现，不再是 /* (保持不变) */)
+
+  Widget _buildGlassCard({required Widget child}) { 
      return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: BackdropFilter(
@@ -382,45 +593,67 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     );
   }
 
-  // ✅ 【关键修改】: 替换 _buildImagePicker
   Widget _buildImagePicker() {
+    // 检查是否有旧图片
+    final List<String> existingUrls = List<String>.from(_existingPropertyData['imageUrls'] ?? []);
+    
     return GestureDetector(
       onTap: _pickImages,
       child: Container(
-        height: 150, // 保持容器高度
+        height: 150, 
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.1),
           borderRadius: BorderRadius.circular(15),
           border: Border.all(color: Colors.white.withOpacity(0.2)),
         ),
-        child: _selectedImages.isEmpty
-            // 1. 如果未选择，显示提示
-            ? const Center(
+        child: (_selectedImages.isEmpty && existingUrls.isEmpty)
+            // 1. (Add 模式) 或 (Edit 模式但无图) -> 显示提示
+            ? Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.add_photo_alternate_outlined, color: Colors.white70, size: 40),
-                    SizedBox(height: 8),
-                    Text('Add Pictures', style: TextStyle(color: Colors.white70)),
+                    const Icon(Icons.add_photo_alternate_outlined, color: Colors.white70, size: 40),
+                    const SizedBox(height: 8),
+                    Text(_isEditMode ? 'Tap to add/replace pictures' : 'Add Pictures', style: TextStyle(color: Colors.white70)),
                   ],
                 ),
               )
-            // 2. 如果已选择，显示水平滚动的图片列表
-            : Padding(
-                padding: const EdgeInsets.all(8.0), // 在列表周围添加一些内边距
+            // 2. 优先显示新选择的本地图片
+            : _selectedImages.isNotEmpty
+            ? Padding(
+                padding: const EdgeInsets.all(8.0), 
                 child: ListView.builder(
-                  scrollDirection: Axis.horizontal, // 水平滚动
+                  scrollDirection: Axis.horizontal, 
                   itemCount: _selectedImages.length,
                   itemBuilder: (context, index) {
                     return Padding(
-                      padding: const EdgeInsets.only(right: 8.0), // 图片之间的间距
+                      padding: const EdgeInsets.only(right: 8.0), 
                       child: ClipRRect(
-                        borderRadius: BorderRadius.circular(10.0), // 图片圆角
+                        borderRadius: BorderRadius.circular(10.0), 
                         child: Image.file(
-                          File(_selectedImages[index].path), // 从 XFile 路径创建 File
-                          fit: BoxFit.cover,
-                          width: 134, // (150 高度 - 16 内边距)
-                          height: 134,
+                          File(_selectedImages[index].path), 
+                          fit: BoxFit.cover, width: 134, height: 134,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              )
+            // 3. (Edit 模式) 如果未选择新图片，则显示已有的网络图片
+            : Padding(
+                padding: const EdgeInsets.all(8.0), 
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal, 
+                  itemCount: existingUrls.length,
+                  itemBuilder: (context, index) {
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8.0), 
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(10.0), 
+                        child: Image.network( // 👈 使用 Image.network
+                          existingUrls[index], 
+                          fit: BoxFit.cover, width: 134, height: 134,
+                          // (可以添加加载和错误占位符)
                         ),
                       ),
                     );
@@ -431,7 +664,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     );
   }
 
-  Widget _buildTextFormField({ /* (保持不变) */ 
+  Widget _buildTextFormField({ 
     required TextEditingController controller, required String labelText, required IconData icon,
     String? Function(String?)? validator, TextInputType? keyboardType, int maxLines = 1,
   }) {
@@ -449,7 +682,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     );
   }
 
-  Widget _buildCheckboxGrid({ /* (保持不变) */ 
+  Widget _buildCheckboxGrid({ 
     required String title,
     required Map<String, IconData> options,
     required Set<String> selectedOptions,
@@ -491,7 +724,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     );
   }
 
-  Widget _buildContractPicker() { /* (保持不变) */ 
+  Widget _buildContractPicker() {
+    final String? existingContractUrl = _existingPropertyData['contractUrl'];
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -532,6 +767,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
             ],
           )
         ),
+        
         if (_selectedContract != null)
           Padding(
             padding: const EdgeInsets.only(top: 16.0),
@@ -565,19 +801,43 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                 ],
               ),
             ),
+          )
+        else if (_isEditMode && existingContractUrl != null && existingContractUrl.isNotEmpty && _contractOption == ContractOption.none)
+          Padding(
+            padding: const EdgeInsets.only(top: 16.0),
+            child: Container( 
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.1), 
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_box_outlined, color: Colors.white70, size: 20),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Using existing contract',
+                      style: TextStyle(color: Colors.white70, fontStyle: FontStyle.italic),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
       ],
     );
   }
   
-  Widget _buildUploadUI() { /* (保持不变) */ 
+  Widget _buildUploadUI() { 
     return Padding(
       padding: const EdgeInsets.only(top: 16.0),
       child: GestureDetector(
         onTap: _pickContract, 
         child: InputDecorator(
           decoration: InputDecoration(
-            labelText: 'Contract (Optional PDF)',
+            labelText: _isEditMode ? 'Upload Replacement PDF' : 'Contract (Optional PDF)',
             labelStyle: const TextStyle(color: Colors.white70),
             prefixIcon: const Icon(Icons.description_outlined, color: Colors.white70),
             filled: true,
@@ -586,19 +846,17 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
             enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none), 
             focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: Colors.white.withOpacity(0.5))),
           ),
-          child: Text('Tap to select PDF file', style: TextStyle(color: Colors.white70, fontSize: 16)),
+          child: Text(
+            _isEditMode ? 'Tap to replace existing PDF' : 'Tap to select PDF file', 
+            style: TextStyle(color: Colors.white70, fontSize: 16)),
         ),
       ),
     );
   }
 
-  // lib/screens/add_property_screen.dart -> 确保粘贴在 _AddPropertyScreenState 类的 { ... } 内部
-
-  // ✅ 9. 粘贴这个缺失的函数：小区下拉菜单
   Widget _buildCommunityDropdown() {
     return DropdownButtonFormField<String>(
       value: _selectedCommunity,
-      // 样式
       decoration: InputDecoration(
         labelText: 'Community / Apartment',
         labelStyle: const TextStyle(color: Colors.white70),
@@ -609,25 +867,20 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
         focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: Colors.white.withOpacity(0.5))),
       ),
-      // 菜单样式
       dropdownColor: const Color(0xFF295a68), 
       style: const TextStyle(color: Colors.white, fontSize: 16),
       iconEnabledColor: Colors.white70,
       isExpanded: true,
-      // 提示
       hint: Text(
         _isCommunityListLoading ? 'Loading communities...' : 'Select community', 
         style: const TextStyle(color: Colors.white70)
       ),
-      // 验证
       validator: (value) => value == null ? 'Please select a community' : null,
-      // 逻辑
       onChanged: _isCommunityListLoading ? null : (String? newValue) {
         setState(() {
           _selectedCommunity = newValue;
         });
       },
-      // 选项
       items: _communityList.map((String value) {
         return DropdownMenuItem<String>(
           value: value,
@@ -636,10 +889,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       }).toList(),
     );
   }
-
-// ... (您其他的 _build... 函数 和 build 方法) ...
   
-  Widget _buildGenerateUI() { /* (保持不变) */ 
+  Widget _buildGenerateUI() { 
     return Padding(
       padding: const EdgeInsets.only(top: 16.0),
       child: Row(
@@ -691,7 +942,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     );
   }
   
-  Widget _buildChoiceChip({ /* (保持不变) */ 
+  Widget _buildChoiceChip({ 
     required String label,
     required IconData icon,
     required bool selected,
@@ -734,7 +985,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     );
   }
 
-  Widget _buildDatePicker() => GestureDetector( /* (保持不变) */ 
+  Widget _buildDatePicker() => GestureDetector( 
     onTap: () => _selectDate(context),
     child: InputDecorator(
       decoration: InputDecoration(
@@ -754,7 +1005,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     ),
   );
 
-  Widget _buildNumericFeatureItem({ /* (保持不变) */ 
+  Widget _buildNumericFeatureItem({ 
     required String label,
     required IconData icon,
     required int value,
@@ -784,7 +1035,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     );
   }
 
-  Widget _buildFurnishingSelector() { /* (保持不变) */ 
+  Widget _buildFurnishingSelector() { 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -817,7 +1068,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     );
   }
 
-  // ---------------- 主界面 Build (布局重构) ----------------
+  // ---------------- 主界面 Build ----------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -825,7 +1076,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text('Add New Property', style: TextStyle(color: Colors.white)),
+        // ✅ 12. 【UI 修改】: 动态标题
+        title: Text(_isEditMode ? 'Edit Property' : 'Add New Property', style: const TextStyle(color: Colors.white)),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: Stack(
@@ -966,11 +1218,13 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                     const SizedBox(height: 16),
                     _buildGlassCard(child: _buildContractPicker()),
                     const SizedBox(height: 24),
-                    ElevatedButton( // Submit Button
+                    
+                    // ✅ 13. 【UI 修改】: 动态提交按钮
+                    ElevatedButton( 
                       onPressed: _isLoading ? null : _showConfirmDialog,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF1D5DC7),
-                        foregroundColor: Colors.white, // ✅ 确保提交按钮文字也是白色
+                        foregroundColor: Colors.white, 
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(20),
@@ -978,8 +1232,28 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                       ),
                       child: _isLoading
                           ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3))
-                          : const Text('Add Property', style: TextStyle(color: Colors.white, fontSize: 16)),
+                          // 根据模式显示不同文本
+                          : Text(_isEditMode ? 'Save Changes' : 'Add Property', style: const TextStyle(color: Colors.white, fontSize: 16)),
                     ),
+                    
+                    // ✅ 14. 【新功能】: 仅在编辑模式下显示删除按钮
+                    if (_isEditMode) ...[
+                      const SizedBox(height: 16),
+                      OutlinedButton.icon(
+                        onPressed: _isLoading ? null : _deleteProperty, 
+                        icon: const Icon(Icons.delete_outline),
+                        label: const Text('Delete Property'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red[300], // 弱红色
+                          side: BorderSide(color: Colors.red[300]!),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                      ),
+                    ],
+
                     const SizedBox(height: 20),
                   ],
                 ),

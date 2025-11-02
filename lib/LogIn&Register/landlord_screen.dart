@@ -1,15 +1,22 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:smart_rental_system/Screens/add_property_screen.dart';
 
-// 1. 导入所需的 UI 和导航组件
-import '../Compoents/animated_bottom_nav.dart';
-import '../Compoents/user_info_card.dart'; 
-import '../LogIn&Register/login_screen.dart'; 
-import '../account_check_screen.dart'; // 修正：假设在 lib/ 根目录
-import '../home_screen.dart';
-import '../Screens/add_property_screen.dart'; // 导入已存在
+// ✅ 1. 【已修复】: 统一并修正了所有的 import 路径
+// (请确保您的 'Compoents' 文件夹拼写正确, 如果是 'Components' 请在此处更正)
+import 'package:smart_rental_system/Compoents/animated_bottom_nav.dart';
+import 'package:smart_rental_system/Compoents/user_info_card.dart'; 
+import 'package:smart_rental_system/LogIn&Register/login_screen.dart'; 
+// (假设 account_check_screen 在 lib/screens/ 目录下)
+import 'package:smart_rental_system/account_check_screen.dart'; 
+// (假设 home_screen 在 lib/ 目录下)
+import 'package:smart_rental_system/home_screen.dart';
+// (✅ 关键修复: 使用小写的 'screens')
+import 'package:smart_rental_system/screens/add_property_screen.dart'; 
+
+// ✅ 2. 导入我们新创建的卡片 (请确保 'Compoents' 拼写正确)
+import 'package:smart_rental_system/Compoents/property_card.dart';
+
 
 class LandlordScreen extends StatefulWidget {
   const LandlordScreen({super.key});
@@ -21,22 +28,32 @@ class LandlordScreen extends StatefulWidget {
 class _LandlordScreenState extends State<LandlordScreen> {
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
   late Stream<DocumentSnapshot> _userStream;
+  // ✅ 3. 为房源列表创建新的 Stream
+  late Stream<QuerySnapshot> _propertiesStream;
 
-  // 2. 添加底边栏状态
   int _currentNavIndex = 3; 
 
   @override
   void initState() {
     super.initState();
     if (_uid != null) {
+      // Stream 1: 用于 UserInfoCard
       _userStream =
           FirebaseFirestore.instance.collection('users').doc(_uid).snapshots();
+          
+      // ✅ 4. Stream 2: 用于房源列表，查询 'properties' 集合
+      _propertiesStream = FirebaseFirestore.instance
+          .collection('properties')
+          .where('landlordUid', isEqualTo: _uid) // 筛选出当前房东的房源
+          .snapshots(); 
+          
     } else {
       _userStream = Stream.error("User not logged in");
+      _propertiesStream = Stream.error("User not logged in");
     }
   }
 
-  // 3. 添加底边栏点击处理
+  // ( _onNavTap 和 _signOut 函数保持不变 )
   void _onNavTap(int index) {
     if (index == 0) { // Home
       Navigator.pushReplacement(
@@ -56,7 +73,6 @@ class _LandlordScreenState extends State<LandlordScreen> {
     });
   }
 
-  // (您的 _signOut 函数保持不变)
   Future<void> _signOut(BuildContext context) async {
     final bool? didConfirm = await showDialog<bool>(
       context: context,
@@ -116,64 +132,105 @@ class _LandlordScreenState extends State<LandlordScreen> {
           )
         ],
       ),
+      
+      // ✅ 5. 【核心修改】: 重构 body
       body: Stack(
         fit: StackFit.expand,
         children: [
+          // 背景渐变 (保持不变)
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFF153a44),
-                  Color(0xFF295a68),
-                  Color(0xFF5d8fa0),
-                  Color(0xFF94bac4),
-                ],
+                begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                colors: [ Color(0xFF153a44), Color(0xFF295a68), Color(0xFF5d8fa0), Color(0xFF94bac4) ],
               ),
             ),
           ),
           SafeArea(
             bottom: false, 
-            child: StreamBuilder<DocumentSnapshot>(
-              stream: _userStream,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator(color: Colors.white));
-                }
-
-                if (snapshot.hasError || !snapshot.hasData || !snapshot.data!.exists) {
-                  return const Center(child: Text("Error loading user data", style: TextStyle(color: Colors.white70)));
-                }
-
-                final userData = snapshot.data!.data() as Map<String, dynamic>;
-                final String name = userData['name'] ?? 'Unknown Name';
-                final String phone = userData['phone'] ?? 'No Phone';
-                final String? avatarUrl = userData['avatarUrl'];
-
-                return Column(
-                  children: [
-                    UserInfoCard(
-                      name: name,
-                      phone: phone,
-                      avatarUrl: avatarUrl,
-                    ),
-                    Expanded(
-                      child: Center(
-                        child: Text(
-                          'You have no properties yet.\nTap the + button to add one.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 18, color: Colors.white70),
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
+            child: Column( // 使用 Column 堆叠 UserInfoCard 和 房源列表
+              children: [
+                // 顶部 UserInfoCard (保持不变)
+                StreamBuilder<DocumentSnapshot>(
+                  stream: _userStream,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      // 在加载时显示一个空的 UserInfoCard 占位符
+                      return const UserInfoCard(name: 'Loading...', phone: '...', avatarUrl: null);
+                    }
+                    if (snapshot.hasError || !snapshot.hasData || !snapshot.data!.exists) {
+                      return const UserInfoCard(name: 'Error', phone: 'Could not load data', avatarUrl: null);
+                    }
+                    final userData = snapshot.data!.data() as Map<String, dynamic>;
+                    final String name = userData['name'] ?? 'Unknown Name';
+                    final String phone = userData['phone'] ?? 'No Phone';
+                    final String? avatarUrl = userData['avatarUrl'];
+                    return UserInfoCard(name: name, phone: phone, avatarUrl: avatarUrl);
+                  },
+                ),
+                
+                // ✅ 6. 【新】房源列表
+                Expanded(
+                  child: StreamBuilder<QuerySnapshot>(
+                    stream: _propertiesStream,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator(color: Colors.white));
+                      }
+                
+                      if (snapshot.hasError) {
+                        print("Error loading properties: ${snapshot.error}"); // 调试
+                        return const Center(child: Text("Error loading properties", style: TextStyle(color: Colors.white70)));
+                      }
+                      
+                      // 检查是否有数据，如果 0 个房源，显示提示
+                      if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                        return const Center(
+                          child: Text(
+                            'You have no properties yet.\nTap the + button to add one.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 18, color: Colors.white70),
+                          ),
+                        );
+                      }
+                      
+                      // ✅ 7. 【新】使用 ListView 显示 PropertyCard
+                      final properties = snapshot.data!.docs;
+                      
+                      return ListView.builder(
+                        padding: const EdgeInsets.all(16.0), // 在列表周围添加 padding
+                        itemCount: properties.length,
+                        itemBuilder: (context, index) {
+                          final doc = properties[index];
+                          final data = doc.data() as Map<String, dynamic>;
+                          
+                          return PropertyCard(
+                            propertyData: data,
+                            propertyId: doc.id,
+                            onTap: () {
+                              // ✅ 8. 点击卡片导航到 AddPropertyScreen（编辑模式）
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => AddPropertyScreen(
+                                    propertyId: doc.id, // 👈 传入 ID，进入编辑模式
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
+      
+      // (底边栏和 FAB 保持不变)
       bottomNavigationBar: AnimatedBottomNav(
         currentIndex: _currentNavIndex, 
         onTap: _onNavTap, 
@@ -184,11 +241,9 @@ class _LandlordScreenState extends State<LandlordScreen> {
           BottomNavItem(icon: Icons.person, label: "My Account"),
         ],
       ),
-
-      // ✅ 【已修改】: 补充了 FAB 的导航逻辑
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          // 跳转到添加房源页面
+          // 导航到 AddPropertyScreen (不传 ID，进入添加模式)
           Navigator.push(
             context,
             MaterialPageRoute(builder: (context) => const AddPropertyScreen()),
