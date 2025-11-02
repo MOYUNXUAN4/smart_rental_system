@@ -6,8 +6,8 @@ import 'package:flutter/material.dart';
 import '../Compoents/animated_bottom_nav.dart';
 import '../Compoents/user_info_card.dart'; 
 import '../LogIn&Register/login_screen.dart'; 
-import '../account_check_screen.dart';
-import '../home_screen.dart';
+import '../Services/account_check_screen.dart';
+import '../Screens/home_screen.dart';
 
 class TenantScreen extends StatefulWidget {
   const TenantScreen({super.key});

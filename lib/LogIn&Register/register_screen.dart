@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 // ✅ 导入 AccountCheckScreen 以修复导航
-import '../account_check_screen.dart';
+import '../Services/account_check_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   final String userType;

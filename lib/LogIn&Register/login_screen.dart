@@ -4,9 +4,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 // --- 检查导入路径 ---
 import 'register_screen.dart';
-import '../home_screen.dart';
+import '../Screens/home_screen.dart';
 import '../Compoents/animated_bottom_nav.dart';
-import '../account_check_screen.dart'; 
+import '../Services/account_check_screen.dart'; 
 // --- 导入结束 ---
 
 class LoginScreen extends StatefulWidget {

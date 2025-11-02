@@ -8,9 +8,9 @@ import 'package:smart_rental_system/Compoents/animated_bottom_nav.dart';
 import 'package:smart_rental_system/Compoents/user_info_card.dart'; 
 import 'package:smart_rental_system/LogIn&Register/login_screen.dart'; 
 // (假设 account_check_screen 在 lib/screens/ 目录下)
-import 'package:smart_rental_system/account_check_screen.dart'; 
+import 'package:smart_rental_system/Services/account_check_screen.dart'; 
 // (假设 home_screen 在 lib/ 目录下)
-import 'package:smart_rental_system/home_screen.dart';
+import 'package:smart_rental_system/Screens/home_screen.dart';
 // (✅ 关键修复: 使用小写的 'screens')
 import 'package:smart_rental_system/screens/add_property_screen.dart'; 
 

@@ -1,11 +1,13 @@
 // lib/main.dart
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+// ignore: unused_import
 import 'package:smart_rental_system/Screens/add_property_screen.dart';
-import 'package:smart_rental_system/home_screen.dart';
+import 'package:smart_rental_system/Screens/home_screen.dart';
 
 // 导入我们测试合同生成的界面
-import 'home_screen.dart';
+// ignore: duplicate_import
+import 'Screens/home_screen.dart';
 import 'Services/firebase_options.dart';
 
 void main() async {

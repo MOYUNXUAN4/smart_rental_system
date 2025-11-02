@@ -12,13 +12,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 // ==========================================================
 
 // 1. 未登录时跳转的界面 (根据您的 AuthGate 逻辑，是 LoginScreen)
-import '../LogIn&Register/login_screen.dart'; 
+import '../../LogIn&Register/login_screen.dart'; 
 
 // 2. 房东仪表板
-import '../LogIn&Register/landlord_screen.dart';
+import '../../LogIn&Register/landlord_screen.dart';
 
 // 3. 租户仪表板
-import '../LogIn&Register/tenant_screen.dart';
+import '../../LogIn&Register/tenant_screen.dart';
 
 // ==========================================================
 // ⚠️ 检查导入路径 END

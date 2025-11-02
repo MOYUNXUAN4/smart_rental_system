@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 // 导入我们已有的 GlassCard
+// ignore: unused_import
 import 'glass_card.dart';
 
 // ✅ 1. 在这里定义 ContractOption enum，以便 ContractPicker 和 AddPropertyScreen 都可以访问它
