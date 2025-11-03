@@ -1,5 +1,7 @@
 // lib/screens/account_check_screen.dart
 
+// ignore_for_file: avoid_print, duplicate_ignore
+
 import 'package:flutter/material.dart';
 // --- 核心 Firebase 依赖 ---
 import 'package:firebase_auth/firebase_auth.dart';
@@ -77,6 +79,7 @@ class _AccountCheckScreenState extends State<AccountCheckScreen> {
       } else {
         // 未知类型或数据异常，导回登录界面
         targetScreen = const LoginScreen(); 
+        // ignore: avoid_print
         print('Warning: Unknown user type or missing data: $userType');
       }
     } catch (e) {

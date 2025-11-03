@@ -1,112 +1,198 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart'; // 👈 用于打开 WhatsApp
-import 'glass_card.dart'; // 👈 重用我们的毛玻璃卡片
+import 'package:url_launcher/url_launcher.dart'; // 确保您已添加此依赖
+import 'glass_card.dart'; // 导入毛玻璃卡片
+
+// 导入登录页面 (请确保路径正确)
+import 'package:smart_rental_system/LogIn&Register/login_screen.dart';
 
 class LandlordContactCard extends StatelessWidget {
   final String landlordUid;
+  final String? currentUserId; 
 
   const LandlordContactCard({
     super.key,
     required this.landlordUid,
+    required this.currentUserId, 
   });
 
-  // 启动 WhatsApp 的函数
-  Future<void> _launchWhatsApp(String phone, BuildContext context) async {
-    // 假设电话号码是马来西亚格式，需要 '6' 开头
-    String formattedPhone = phone.replaceAll(RegExp(r'\D'), ''); // 移除所有非数字
-    if (!formattedPhone.startsWith('6')) {
-       formattedPhone = '6$formattedPhone'; // 确保有国家码
+  // (拨打电话函数保持不变)
+  Future<void> _launchPhone(String phoneNumber, BuildContext context) async {
+    final Uri url = Uri(scheme: 'tel', path: phoneNumber);
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not launch $phoneNumber')),
+      );
     }
+  }
+  
+  // (WhatsApp 跳转逻辑保持不变)
+  Future<void> _launchWhatsApp(String phone, BuildContext context) async {
+    // 移除 +、- 和空格
+    String normalizedPhone = phone.replaceAll(RegExp(r'[\s-]+'), '');
     
-    final Uri whatsappUrl = Uri.parse('https://wa.me/$formattedPhone');
+    // 假设是马来西亚号码, 替换开头的 0
+    if (normalizedPhone.startsWith('0')) {
+      normalizedPhone = '60${normalizedPhone.substring(1)}';
+    }
+    // (如果需要，添加更多国家代码逻辑)
     
+    final Uri url = Uri.parse("https://wa.me/$normalizedPhone");
+
     try {
-      if (await canLaunchUrl(whatsappUrl)) {
-        await launchUrl(whatsappUrl, mode: LaunchMode.externalApplication);
+      if (await launchUrl(url, mode: LaunchMode.externalNonBrowserApplication)) {
+        // 成功打开
       } else {
-        throw 'Could not launch $whatsappUrl';
+         ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open WhatsApp. Is it installed?')),
+        );
       }
     } catch (e) {
-      if (context.mounted) {
-         ScaffoldMessenger.of(context).showSnackBar(
-           SnackBar(content: Text('Failed to open WhatsApp: $e')),
-         );
-      }
+       ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // 使用 FutureBuilder 自动获取房东信息
-    return FutureBuilder<DocumentSnapshot>(
-      future: FirebaseFirestore.instance.collection('users').doc(landlordUid).get(),
+    
+    // (未登录时的 UI 保持不变)
+    if (currentUserId == null) {
+      return GlassCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Landlord Contact',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Center(
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.login, color: Colors.white70),
+                label: const Text(
+                  'Login to view contact', 
+                  style: TextStyle(color: Colors.white70),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: Colors.white.withOpacity(0.3)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const LoginScreen()),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      );
+    }
+    
+    // (已登录时的 StreamBuilder 逻辑保持不变)
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance.collection('users').doc(landlordUid).snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const GlassCard(
-            child: Center(child: CircularProgressIndicator(color: Colors.white)),
-          );
+          return const GlassCard(child: Center(child: CircularProgressIndicator()));
         }
-        
         if (snapshot.hasError || !snapshot.hasData || !snapshot.data!.exists) {
-          return const GlassCard(
-            child: Center(child: Text("Failed to load landlord info", style: TextStyle(color: Colors.white70))),
-          );
+          return const GlassCard(child: Center(child: Text('Could not load landlord info.', style: TextStyle(color: Colors.white70))));
         }
 
-        // 成功获取数据
-        final landlordData = snapshot.data!.data() as Map<String, dynamic>;
-        final String name = landlordData['name'] ?? 'Landlord';
-        final String phone = landlordData['phone'] ?? '';
-        final String? avatarUrl = landlordData['avatarUrl'];
+        final data = snapshot.data!.data() as Map<String, dynamic>;
+        final String name = data['name'] ?? 'Landlord';
+        final String? phone = data['phone'];
+        final String? avatarUrl = data['avatarUrl'];
 
         return GlassCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'LANDLORD',
-                style: TextStyle(color: Colors.white70, fontSize: 12, letterSpacing: 1.5),
+                'Landlord Contact',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
               ),
-              const SizedBox(height: 12),
+              // ✅ 1. 【布局修改】: 减小间距
+              const SizedBox(height: 16), 
+              
               Row(
+                crossAxisAlignment: CrossAxisAlignment.center, 
                 children: [
-                  CircleAvatar(
-                    radius: 28,
-                    backgroundColor: Colors.white.withOpacity(0.1),
-                    backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
-                        ? NetworkImage(avatarUrl)
-                        : null,
-                    child: (avatarUrl == null || avatarUrl.isEmpty)
-                        ? Icon(Icons.person, size: 30, color: Colors.white70)
-                        : null,
-                  ),
-                  const SizedBox(width: 16),
+                  // --- 左侧：头像和名字 ---
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          name,
-                          style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                        ),
-                        if (phone.isNotEmpty) // 仅在有电话时显示
-                          Text(
-                            phone,
-                            style: const TextStyle(color: Colors.white70, fontSize: 16),
-                          ),
-                      ],
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: CircleAvatar(
+                        // ✅ 2. 头像更大
+                        radius: 30, 
+                        backgroundColor: Colors.white.withOpacity(0.1),
+                        backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
+                            ? NetworkImage(avatarUrl)
+                            : null,
+                        child: (avatarUrl == null || avatarUrl.isEmpty)
+                            ? const Icon(Icons.person, color: Colors.white70, size: 30) // ✅ 图标更大
+                            : null,
+                      ),
+                      // ✅ 2. 名字更大
+                      title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+                      // ✅ 3. 显示电话
+                      subtitle: Text(
+                        phone ?? 'No phone number',
+                        style: const TextStyle(color: Colors.white70, fontSize: 14)
+                      ),
                     ),
                   ),
-                  // WhatsApp 按钮
-                  if (phone.isNotEmpty)
-                    IconButton(
-                      icon: const Icon(Icons.message, color: Colors.greenAccent, size: 28),
-                      onPressed: () => _launchWhatsApp(phone, context),
-                      tooltip: 'Contact via WhatsApp',
-                    ),
+                  
+                  const SizedBox(width: 12), // 间隔
+
+                  // --- ✅ 4. 【布局修改】: 按钮水平排练且靠近 ---
+                  Row(
+                    mainAxisSize: MainAxisSize.min, // 占用最小空间
+                    children: [
+                      // Call Button
+                      Material(
+                        color: Colors.white.withOpacity(0.2),
+                        shape: const CircleBorder(),
+                        clipBehavior: Clip.antiAlias,
+                        child: IconButton(
+                          onPressed: (phone != null && phone.isNotEmpty) ? () => _launchPhone(phone, context) : null,
+                          icon: const Icon(Icons.call_outlined, size: 22, color: Colors.white),
+                          tooltip: 'Call',
+                        ),
+                      ),
+                      const SizedBox(width: 8), // 按钮之间的间距
+                      // WhatsApp Button
+                      Material(
+                        color: Colors.white.withOpacity(0.2),
+                        shape: const CircleBorder(),
+                        clipBehavior: Clip.antiAlias,
+                        child: IconButton(
+                          onPressed: (phone != null && phone.isNotEmpty) ? () => _launchWhatsApp(phone, context) : null,
+                          icon: const Icon(Icons.chat_bubble_outline, size: 22, color: Colors.white),
+                          tooltip: 'WhatsApp',
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
-              ),
+              )
             ],
           ),
         );
