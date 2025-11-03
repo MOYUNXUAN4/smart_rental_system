@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 // (请确保您的 'Compoents' 文件夹拼写正确, 如果是 'Components' 请在此处更正)
 import 'package:smart_rental_system/Compoents/animated_bottom_nav.dart';
 import 'package:smart_rental_system/Compoents/user_info_card.dart'; 
-import 'package:smart_rental_system/LogIn&Register/login_screen.dart'; 
+import 'package:smart_rental_system/Screens/login_screen.dart'; 
 // (假设 account_check_screen 在 lib/screens/ 目录下)
 import 'package:smart_rental_system/Services/account_check_screen.dart'; 
 // (假设 home_screen 在 lib/ 目录下)

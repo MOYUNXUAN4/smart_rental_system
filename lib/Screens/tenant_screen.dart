@@ -5,9 +5,9 @@ import 'package:flutter/material.dart';
 // 1. 导入所有必需的 UI 和导航组件
 import '../Compoents/animated_bottom_nav.dart';
 import '../Compoents/user_info_card.dart'; 
-import '../LogIn&Register/login_screen.dart'; 
+import 'login_screen.dart'; 
 import '../Services/account_check_screen.dart';
-import '../Screens/home_screen.dart';
+import 'home_screen.dart';
 
 class TenantScreen extends StatefulWidget {
   const TenantScreen({super.key});

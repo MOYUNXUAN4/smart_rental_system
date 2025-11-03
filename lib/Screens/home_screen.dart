@@ -6,7 +6,7 @@ import 'package:smart_rental_system/Screens/property_list_screen.dart';
 import 'package:smart_rental_system/screens/favorite_screen.dart'; 
 
 // 导入核心组件和页面
-import '../LogIn&Register/login_screen.dart';
+import 'login_screen.dart';
 import '../Compoents/animated_bottom_nav.dart'; 
 import '../Services/account_check_screen.dart'; 
 

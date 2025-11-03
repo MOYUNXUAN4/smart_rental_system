@@ -4,7 +4,7 @@ import 'package:url_launcher/url_launcher.dart'; // 确保您已添加此依赖
 import 'glass_card.dart'; // 导入毛玻璃卡片
 
 // 导入登录页面 (请确保路径正确)
-import 'package:smart_rental_system/LogIn&Register/login_screen.dart';
+import 'package:smart_rental_system/Screens/login_screen.dart';
 
 class LandlordContactCard extends StatelessWidget {
   final String landlordUid;
