@@ -1,52 +1,92 @@
+// lib/Screens/home_screen.dart
 import 'dart:ui';
+import 'dart:math'; 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+
+// 导入所有需要的屏幕
 import 'package:smart_rental_system/Screens/property_list_screen.dart';
 import 'package:smart_rental_system/screens/favorite_screen.dart'; 
-
-// 导入核心组件和页面
 import 'login_screen.dart';
-import '../Compoents/animated_bottom_nav.dart'; 
 import '../Services/account_check_screen.dart'; 
+import 'package:smart_rental_system/screens/landlord_inbox_screen.dart'; 
+import 'package:smart_rental_system/screens/property_detail_screen.dart'; 
+import 'landlord_screen.dart';
+import 'tenant_screen.dart'; 
+
+// 导入所有需要的组件
+import '../Compoents/animated_bottom_nav.dart'; 
+import 'package:smart_rental_system/Compoents/property_card.dart'; 
+
+// ▼▼▼ 【BUG 修复】: 添加 'glass_card.dart' 导入 ▼▼▼
+import '../Compoents/glass_card.dart';
+// ▲▲▲ 【BUG 修复】 ▲▲▲
 
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final String userRole;
+  const HomeScreen({super.key, this.userRole = 'Tenant'}); 
+
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _bottomIndex = 0; // 索引 0 (Home) 是默认页
+  int _bottomIndex = 0; 
 
-  // ✅ 2. 定义用于 IndexedStack 的页面列表
-  final List<Widget> _pages = [
-    const _HomeContent(),        // 索引 0: 主页内容 (我们刚提取的)
-    const PropertyListScreen(),  // 索引 1: 房源列表页 (新创建的)
-    const FavoritesScreen(),     // 索引 2: 收藏页 (新创建的)
-  ];
+  late final List<Widget> _pages; 
+  static const int _accountTabIndex = 3; 
+  late final List<BottomNavItem> _navItems; 
+  bool get isLandlord => widget.userRole == 'Landlord';
+  
+  @override
+  void initState() {
+    super.initState();
+    _pages = [
+      _HomeContent(userRole: widget.userRole),  
+      const PropertyListScreen(),           
+      const FavoritesScreen(),              
+    ];
 
-  static const int _accountTabIndex = 3; // 'Account' 标签页的索引
+    _navItems = isLandlord
+      ? const [ 
+          BottomNavItem(icon: Icons.home, label: 'Home'),
+          BottomNavItem(icon: Icons.list, label: 'List'),
+          BottomNavItem(icon: Icons.inbox, label: 'Inbox'), 
+          BottomNavItem(icon: Icons.person, label: 'Account'),
+        ]
+      : const [ 
+          BottomNavItem(icon: Icons.home, label: 'Home'),
+          BottomNavItem(icon: Icons.list, label: 'List'),
+          BottomNavItem(icon: Icons.star, label: 'Favorites'), 
+          BottomNavItem(icon: Icons.person, label: 'Account'),
+        ];
+  }
   
-  final List<_NavItemData> _navItems = const [
-    _NavItemData(icon: Icons.home, label: 'Home'),
-    _NavItemData(icon: Icons.list, label: 'List'),
-    _NavItemData(icon: Icons.star, label: 'Favorites'),
-    _NavItemData(icon: Icons.person, label: 'Account'),
-  ];
-  
-  // ✅ 3. 【已修改】 _onBottomNavTap 
-  // 现在它会处理 IndexedStack 和导航
+  // (导航逻辑 - 已修复)
   void _onBottomNavTap(int index) {
     if (index == _accountTabIndex) {
-      // 索引 3 (Account) 仍然使用 push 导航
+      // 索引 3 (Account) - 导航到 *真正* 的账户页面
+      if (isLandlord) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const LandlordScreen()),
+        );
+      } else {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const TenantScreen()),
+        );
+      }
+    } else if (index == 2 && isLandlord) {
+      // Landlord 点击 索引 2 (Inbox)
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (context) => const AccountCheckScreen()),
+        MaterialPageRoute(builder: (context) => const LandlordInboxScreen()),
       );
-      // (我们不更新 _bottomIndex，以便在返回时保持在之前的页面)
-    } else {
+    }
+    else {
       // 索引 0, 1, 2 (Home, List, Favorites) 只需更新状态以切换 IndexedStack
       setState(() {
         _bottomIndex = index;
@@ -57,16 +97,12 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBodyBehindAppBar: true, // 保持全局透明
-      extendBody: true, // 保持全局透明
-
-      // ⚠️ 注意：AppBar 已被移至 _HomeContent 中
-      // appBar: ... 
+      extendBodyBehindAppBar: true, 
+      extendBody: true, 
 
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // 背景渐变 (现在是所有页面的背景)
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -83,42 +119,40 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           
-          // ✅ 4. 【核心修改】: 使用 IndexedStack 来切换页面
           IndexedStack(
-            index: _bottomIndex,
+            index: (isLandlord && _bottomIndex == 2) ? 0 : _bottomIndex,
             children: _pages,
           ),
         ],
       ),
       
-      // 底边栏 (保持不变)
       bottomNavigationBar: AnimatedBottomNav(
         currentIndex: _bottomIndex,
-        onTap: _onBottomNavTap, // 使用更新后的点击处理
-        items: _navItems.map((e) => BottomNavItem(icon: e.icon, label: e.label)).toList(),
+        onTap: _onBottomNavTap, 
+        items: _navItems,
       ),
     );
   }
 }
 
 // ===============================================================
-// ✅ 5. 【新】: 提取您原有的主页 UI 到这个私有 Widget 中
+// _HomeContent: (这个私有 Widget 保持不变)
 // ===============================================================
 class _HomeContent extends StatefulWidget {
-  const _HomeContent();
+  final String userRole;
+  const _HomeContent({required this.userRole});
 
   @override
   State<_HomeContent> createState() => _HomeContentState();
 }
 
 class _HomeContentState extends State<_HomeContent> {
-  // (所有原有的 _HomeContent 状态和函数都移到这里)
   late Stream<DocumentSnapshot> _userStream; 
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
-  
+  late Stream<QuerySnapshot> _propertiesStream;
+  bool get isLandlord => widget.userRole == 'Landlord';
   final String _backgroundImagePath = 'assets/images/mainPageBackGround.png';
-  final String _smallImagePath = 'assets/images/mainPageBackGround.png'; 
-
+  
   @override
   void initState() {
     super.initState();
@@ -127,10 +161,10 @@ class _HomeContentState extends State<_HomeContent> {
     } else {
       _userStream = Stream.error("User not logged in");
     }
+    _propertiesStream = FirebaseFirestore.instance.collection('properties').snapshots();
   }
   
-  // (登出函数)
-  // ignore: unused_element
+  // (登出函数 - 保持不变)
   Future<void> _signOut() async {
     try {
       await FirebaseAuth.instance.signOut();
@@ -148,11 +182,32 @@ class _HomeContentState extends State<_HomeContent> {
     }
   }
 
-  // (跳转到账户页的函数)
+  // (跳转到账户页的函数 - 已修复)
   void _goToAccount() {
+    if (isLandlord) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const LandlordScreen()),
+      );
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const TenantScreen()),
+      );
+    }
+  }
+
+  // (快捷按钮导航 - 保持不变)
+  void _goToList() {
+    context.findAncestorStateOfType<_HomeScreenState>()?._onBottomNavTap(1);
+  }
+  void _goToFavorites() {
+    context.findAncestorStateOfType<_HomeScreenState>()?._onBottomNavTap(2);
+  }
+  void _goToLandlordInbox() {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => const AccountCheckScreen()),
+      MaterialPageRoute(builder: (context) => const LandlordInboxScreen()),
     );
   }
 
@@ -166,7 +221,6 @@ class _HomeContentState extends State<_HomeContent> {
     final double expandedAppBarHeight =
         appBarImageHeight + searchBarHeight + searchBarVerticalPadding * 2;
 
-    // (您原有的 CustomScrollView 结构)
     return CustomScrollView(
       slivers: [
         SliverAppBar(
@@ -181,7 +235,7 @@ class _HomeContentState extends State<_HomeContent> {
               onPressed: () {},
             ),
             
-            // (您之前修改的用户头像/名字)
+            // (用户头像/名字 StreamBuilder - 保持不变)
             StreamBuilder<DocumentSnapshot>(
               stream: _userStream,
               builder: (context, snapshot) {
@@ -204,7 +258,7 @@ class _HomeContentState extends State<_HomeContent> {
                 final String? avatarUrl = userData['avatarUrl'];
 
                 return GestureDetector(
-                  onTap: _goToAccount, 
+                  onTap: _goToAccount, // 👈 (使用已修复的 _goToAccount)
                   child: Padding(
                     padding: const EdgeInsets.only(right: 16.0, left: 8.0),
                     child: Row(
@@ -319,14 +373,19 @@ class _HomeContentState extends State<_HomeContent> {
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
                   _buildActionButton(context, Icons.search, "Search", () => debugPrint("Search clicked!")),
-                  _buildActionButton(context, Icons.list_alt, "List", () => debugPrint("List clicked!")),
-                  _buildActionButton(context, Icons.star, "Favorites", () => debugPrint("Favorites clicked!")),
-                  _buildActionButton(context, Icons.person, "My Account", _goToAccount),
+                  _buildActionButton(context, Icons.list_alt, "List", _goToList), 
+                  isLandlord
+                    ? _buildActionButton(context, Icons.inbox, "Inbox", _goToLandlordInbox) 
+                    : _buildActionButton(context, Icons.star, "Favorites", _goToFavorites), 
+                  _buildActionButton(context, Icons.person, "My Account", _goToAccount), // 👈 (使用已修复的 _goToAccount)
                 ],
               ),
             ),
             const SizedBox(height: 24.0),
-            _buildRecommendedCard(context),
+            
+            // (随机推荐卡片 - 保持不变)
+            _buildRecommendedPropertyCard(context),
+            
             const SizedBox(height: 16.0),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -343,7 +402,6 @@ class _HomeContentState extends State<_HomeContent> {
               ),
             ),
             const SizedBox(height: 24.0),
-            // 增加底部填充
             SizedBox(height: MediaQuery.of(context).size.height * 0.15),
           ]),
         ),
@@ -374,99 +432,69 @@ class _HomeContentState extends State<_HomeContent> {
     );
   }
 
-  Widget _buildRecommendedCard(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-      child: Card(
-        margin: EdgeInsets.zero,
-        elevation: 8,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text("Recommended For You",
-                    style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.onSurface)),
-                Icon(Icons.star_border,
-                    color: Theme.of(context).colorScheme.onSurface),
-              ],
+  Widget _buildRecommendedPropertyCard(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _propertiesStream,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            // ▼▼▼ 【BUG 修复】: 使用 GlassCard (现在已导入) ▼▼▼
+            child: GlassCard( 
+              child: SizedBox(
+                height: 100, 
+                child: Center(child: CircularProgressIndicator(color: Colors.white)),
+              ),
             ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Image.asset(
-                    _smallImagePath,
-                    width: 90,
-                    height: 90,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                          width: 90,
-                          height: 90,
-                          color: Colors.grey.shade200,
-                          child: const Icon(Icons.image_not_supported,
-                              color: Colors.grey));
-                    },
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        Text("Cerrado @Southville City",
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.bold)),
-                        SizedBox(height: 4),
-                        Row(children: [
-                          Icon(Icons.king_bed, size: 16, color: Colors.grey),
-                          SizedBox(width: 4),
-                          Text("3",
-                              style:
-                                  TextStyle(fontSize: 12, color: Colors.grey)),
-                          SizedBox(width: 8),
-                          Icon(Icons.bathtub, size: 16, color: Colors.grey),
-                          SizedBox(width: 4),
-                          Text("2",
-                              style:
-                                  TextStyle(fontSize: 12, color: Colors.grey)),
-                          SizedBox(width: 8),
-                          Icon(Icons.car_rental, size: 16, color: Colors.grey),
-                          SizedBox(width: 4),
-                          Text("1",
-                              style:
-                                  TextStyle(fontSize: 12, color: Colors.grey)),
-                        ]),
-                        SizedBox(height: 4),
-                        Text("• Fully Furnished",
-                            style: TextStyle(fontSize: 12, color: Colors.grey)),
-                        Text("• Built-up: 850 sq.ft.",
-                            style: TextStyle(fontSize: 12, color: Colors.grey)),
-                        Text("• 11th Floor",
-                            style: TextStyle(fontSize: 12, color: Colors.grey)),
-                      ]),
-                ),
-                Column(crossAxisAlignment: CrossAxisAlignment.end, children: const [
-                  Text("RM 1800",
+            // ▲▲▲ 【BUG 修复】 ▲▲▲
+          );
+        }
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty || snapshot.hasError) {
+          return const SizedBox.shrink(); 
+        }
+        final properties = snapshot.data!.docs;
+        final randomIndex = Random().nextInt(properties.length);
+        final randomPropertyDoc = properties[randomIndex];
+        final propertyData = randomPropertyDoc.data() as Map<String, dynamic>;
+        final propertyId = randomPropertyDoc.id;
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12.0, left: 4.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      "Recommended For You",
                       style: TextStyle(
-                          fontSize: 20,
+                          fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: Colors.red)),
-                  Text("/Month", style: TextStyle(fontSize: 12, color: Colors.grey)),
-                ]),
-              ],
-            ),
-          ]),
-        ),
-      ),
+                          color: Colors.white)
+                    ),
+                    Icon(Icons.star, color: Colors.yellow[700]),
+                  ],
+                ),
+              ),
+              PropertyCard(
+                propertyData: propertyData,
+                propertyId: propertyId,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => PropertyDetailScreen(propertyId: propertyId),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -488,7 +516,7 @@ class _HomeContentState extends State<_HomeContent> {
     );
   }
 }
-// (辅助类 _NavItemData 保持不变)
+// (辅助类 _NavItemData，你的代码需要它)
 class _NavItemData {
   final IconData icon;
   final String label;

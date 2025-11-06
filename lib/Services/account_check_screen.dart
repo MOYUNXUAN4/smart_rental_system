@@ -1,4 +1,4 @@
-// lib/screens/account_check_screen.dart
+// lib/Services/account_check_screen.dart
 
 // ignore_for_file: avoid_print, duplicate_ignore
 
@@ -10,17 +10,16 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 // ==========================================================
 // ⚠️ 检查导入路径 START
-// 请根据您的文件结构，仔细检查以下导入路径是否正确：
 // ==========================================================
 
-// 1. 未登录时跳转的界面 (根据您的 AuthGate 逻辑，是 LoginScreen)
+// 1. 未登录时跳转的界面
 import '../Screens/login_screen.dart'; 
 
-// 2. 房东仪表板
-import '../../Screens/landlord_screen.dart';
+// 2. 房东仪表板 (当房东点击 "My Account" 时会用到)
+import '../Screens/landlord_screen.dart';
 
-// 3. 租户仪表板
-import '../Screens/tenant_screen.dart';
+// 3. 租户的主页 (HomeScreen)
+import '../Screens/home_screen.dart';
 
 // ==========================================================
 // ⚠️ 检查导入路径 END
@@ -58,6 +57,7 @@ class _AccountCheckScreenState extends State<AccountCheckScreen> {
 
     // 2. 已登录：获取用户类型并导航
     Widget targetScreen;
+    String userRoleFromDB = 'unknown'; 
 
     try {
       // 从 Firestore 获取用户类型
@@ -66,21 +66,25 @@ class _AccountCheckScreenState extends State<AccountCheckScreen> {
           .doc(user!.uid)
           .get();
 
-      // 根据 AuthGate 逻辑，获取 userType 字段
-      final userType = doc.exists && doc.data() != null 
+      // (保持使用 'userType' 字段, 这是正确的)
+      userRoleFromDB = doc.exists && doc.data() != null 
           ? doc.data()!['userType'] ?? 'unknown' 
           : 'unknown';
 
-      // 导航到对应的仪表板 (注意：使用 'Landlord' 和 'Tenant' 匹配您 AuthGate 的逻辑)
-      if (userType == 'Landlord') {
-        targetScreen = const LandlordScreen();
-      } else if (userType == 'Tenant') {
-        targetScreen = const TenantScreen();
+      // 导航到对应的仪表板
+      if (userRoleFromDB == 'Landlord') {
+        // ▼▼▼ 【你要求的修改】 ▼▼▼
+        // 房东登录后，也跳转到 HomeScreen，但传递 'Landlord' 角色
+        targetScreen = const HomeScreen(userRole: 'Landlord');
+        // ▲▲▲ 【修改结束】 ▲▲▲
+      } else if (userRoleFromDB == 'Tenant') {
+        // 租客登录后，跳转到 HomeScreen，传递 'Tenant' 角色
+        targetScreen = const HomeScreen(userRole: 'Tenant'); 
       } else {
         // 未知类型或数据异常，导回登录界面
         targetScreen = const LoginScreen(); 
         // ignore: avoid_print
-        print('Warning: Unknown user type or missing data: $userType');
+        print('Warning: Unknown user type or missing data: $userRoleFromDB');
       }
     } catch (e) {
       // 错误处理，例如网络问题或权限问题
@@ -93,7 +97,6 @@ class _AccountCheckScreenState extends State<AccountCheckScreen> {
 
   // 导航辅助函数：使用 pushReplacement 清除当前堆栈，防止返回
   void _navigateTo(Widget targetScreen) {
-    // 检查 Widget 是否仍然在 Widget Tree 中 (避免在 dispose 后调用 setState/Navigator)
     if (!mounted) return; 
 
     Navigator.of(context).pushReplacement(
@@ -105,8 +108,9 @@ class _AccountCheckScreenState extends State<AccountCheckScreen> {
   Widget build(BuildContext context) {
     // 显示加载界面，直到跳转完成
     return const Scaffold(
+      backgroundColor: Color(0xFF153a44), // 保持和你的主题一致
       body: Center(
-        child: CircularProgressIndicator(),
+        child: CircularProgressIndicator(color: Colors.white),
       ),
     );
   }

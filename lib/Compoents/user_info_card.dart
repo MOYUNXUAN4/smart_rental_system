@@ -3,8 +3,6 @@
 import 'dart:ui'; 
 import 'package:flutter/material.dart';
 import '../Services/storage_service.dart'; 
-// ✅ 1. 导入 cloud_firestore 和 firebase_auth (用于更新)
-// （虽然 storage_service 做了，但最佳实践是在调用处也获取引用）
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -14,12 +12,16 @@ class UserInfoCard extends StatefulWidget {
   final String name;
   final String phone;
   final String? avatarUrl;
+  final int pendingBookingCount; 
+  final VoidCallback? onNotificationTap; 
 
   const UserInfoCard({
     super.key,
     required this.name,
     required this.phone,
     this.avatarUrl,
+    required this.pendingBookingCount, 
+    this.onNotificationTap,
   });
 
   @override
@@ -30,24 +32,17 @@ class _UserInfoCardState extends State<UserInfoCard> {
   final StorageService _storageService = StorageService();
   bool _isUploading = false;
 
-  // ✅ 2. 【已修改】 _pickAndUploadAvatar
+  // ( _pickAndUploadAvatar 方法保持不变 )
   Future<void> _pickAndUploadAvatar() async {
     setState(() {
       _isUploading = true;
     });
-
     try {
-      // 步骤 1: 调用 Service 上传并获取新的 URL
-      // (您的 storage_service 已经正确地在内部更新了 Firestore)
       final String? newUrl = await _storageService.uploadAvatarAndGetURL();
-      
-      // 步骤 2: 【关键修复】如果成功，清除本地的图片缓存
       if (newUrl != null && mounted) {
-        // 这会强制 Image.network 在下次构建时重新下载图片
         await NetworkImage(newUrl).evict(); 
         print("Image cache evicted for: $newUrl");
       }
-
     } catch (e) {
       print("上传失败: $e");
       if (mounted) {
@@ -66,7 +61,6 @@ class _UserInfoCardState extends State<UserInfoCard> {
 
   @override
   Widget build(BuildContext context) {
-    // (build 方法保持不变)
     return Padding(
       padding: const EdgeInsets.all(16.0), 
       child: ClipRRect(
@@ -85,11 +79,12 @@ class _UserInfoCardState extends State<UserInfoCard> {
                 Stack(
                   alignment: Alignment.bottomRight, 
                   children: [
+                    // ( CircleAvatar 保持不变 )
                     CircleAvatar(
                       radius: 35,
                       backgroundColor: Colors.white.withOpacity(0.1), 
                       backgroundImage: (widget.avatarUrl != null && widget.avatarUrl!.isNotEmpty)
-                          ? NetworkImage(widget.avatarUrl!) // 👈 StreamBuilder 重建时会触发这个
+                          ? NetworkImage(widget.avatarUrl!)
                           : null,
                       child: (widget.avatarUrl == null || widget.avatarUrl!.isEmpty)
                           ? Icon(
@@ -99,6 +94,7 @@ class _UserInfoCardState extends State<UserInfoCard> {
                             )
                           : null,
                     ),
+                    // ( _isUploading 逻辑保持不变 )
                     _isUploading
                         ? const SizedBox(
                             width: 24,
@@ -124,6 +120,7 @@ class _UserInfoCardState extends State<UserInfoCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // ▼▼▼ 修改点 1：移除这里的 Badge ▼▼▼
                       Text(
                         widget.name,
                         style: const TextStyle(
@@ -134,7 +131,10 @@ class _UserInfoCardState extends State<UserInfoCard> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
+                      // ▲▲▲ 修改结束 ▲▲▲
+
                       const SizedBox(height: 8),
+                      // ( 电话号码 Row 保持不变 )
                       Row(
                         children: [
                           Icon(Icons.phone, size: 16, color: Colors.white70), 
@@ -151,6 +151,29 @@ class _UserInfoCardState extends State<UserInfoCard> {
                     ],
                   ),
                 ),
+
+                // ▼▼▼ 修改点 2：在 Row 的末尾添加新的通知图标 ▼▼▼
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: widget.onNotificationTap, // 触发点击回调
+                  child: Badge(
+                    // 仅当数量 > 0 时才显示角标
+                    isLabelVisible: widget.pendingBookingCount > 0, 
+                    // 角标显示的内容
+                    label: Text(
+                      widget.pendingBookingCount.toString(),
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                    backgroundColor: Colors.redAccent,
+                    // 始终显示的子图标
+                    child: Icon(
+                      Icons.notifications_outlined, // 始终显示铃铛图标
+                      color: Colors.white.withOpacity(0.9),
+                      size: 30,
+                    ),
+                  ),
+                ),
+                // ▲▲▲ 修改结束 ▲▲▲
               ],
             ),
           ),

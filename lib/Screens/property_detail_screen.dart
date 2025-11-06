@@ -27,7 +27,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   late Stream<DocumentSnapshot> _propertyStream;
   
   static const LatLng _defaultFallbackLatLng = LatLng(3.1390, 101.6869); // 吉隆坡坐标
-  
+
   @override
   void initState() {
     super.initState();
@@ -56,12 +56,13 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     );
   }
 
+  // ▼▼▼ 修改点 1：参数重命名，逻辑不变 ▼▼▼
   Future<void> _sendBookingRequest({
     required String landlordUid,
     required String tenantUid,
     required String propertyId,
     required DateTime meetingTime,
-    required String meetingPoint,
+    required String communityName, // <-- 之前是 meetingPoint
   }) async {
     try {
       await FirebaseFirestore.instance.collection('bookings').add({
@@ -69,7 +70,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
         'landlordUid': landlordUid,
         'tenantUid': tenantUid,
         'meetingTime': Timestamp.fromDate(meetingTime),
-        'meetingPoint': meetingPoint,
+        'meetingPoint': communityName, // <-- 保存房产名称
         'status': 'pending', 
         'requestedAt': FieldValue.serverTimestamp(),
       });
@@ -77,9 +78,11 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
       throw Exception('Failed to send request: $e');
     }
   }
+  // ▲▲▲ 修改结束 ▲▲▲
 
-  void _showBookingSheet(BuildContext context, String landlordUid, String propertyId) {
-    final TextEditingController meetingPointController = TextEditingController(text: "Lobby"); 
+  // ▼▼▼ 修改点 2：整个方法更新 ▼▼▼
+  void _showBookingSheet(BuildContext context, String landlordUid, String communityName) {
+    // final TextEditingController meetingPointController = TextEditingController(text: "Lobby"); // <-- 移除
     DateTime? selectedDate;
     TimeOfDay? selectedTime;
     bool isSubmitting = false;
@@ -112,12 +115,17 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                     ),
                     const SizedBox(height: 16),
                     
-                    _BookingTextFormField(
-                      controller: meetingPointController,
-                      labelText: 'Meeting Point',
-                      icon: Icons.location_on_outlined,
+                    // <-- 新增：显示不可编辑的 Meeting Point
+                    InputDecorator(
+                      decoration: _bookingInputDecoration(Icons.location_on_outlined, 'Meeting Point'),
+                      child: Text(
+                        communityName,
+                        style: const TextStyle(color: Colors.white, fontSize: 16),
+                      ),
                     ),
                     const SizedBox(height: 16),
+                    
+                    // _BookingTextFormField(...), // <-- 移除
                     
                     Row(
                       children: [
@@ -180,9 +188,10 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                       onPressed: isSubmitting ? null : () async {
-                        if (selectedDate == null || selectedTime == null || meetingPointController.text.isEmpty) {
+                        // <-- 修改验证逻辑
+                        if (selectedDate == null || selectedTime == null) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Please select a date, time, and meeting point.'), backgroundColor: Colors.redAccent),
+                            const SnackBar(content: Text('Please select a date and time.'), backgroundColor: Colors.redAccent),
                           );
                           return;
                         }
@@ -195,12 +204,13 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                             selectedTime!.hour, selectedTime!.minute,
                           );
                           
+                          // <-- 修改函数调用
                           await _sendBookingRequest(
                             landlordUid: landlordUid,
                             tenantUid: FirebaseAuth.instance.currentUser!.uid,
                             propertyId: widget.propertyId,
                             meetingTime: fullMeetingTime,
-                            meetingPoint: meetingPointController.text,
+                            communityName: communityName, // <-- 传入 communityName
                           );
                           
                           Navigator.pop(context); 
@@ -214,13 +224,13 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                           );
                         } finally {
                           if (mounted) {
-                             setModalState(() => isSubmitting = false);
+                              setModalState(() => isSubmitting = false);
                           }
                         }
                       },
                       child: isSubmitting 
-                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3))
-                          : const Text('Send Request'),
+                        ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3))
+                        : const Text('Send Request'),
                     ),
                     const SizedBox(height: 16),
                   ],
@@ -232,6 +242,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
       },
     );
   }
+  // ▲▲▲ 修改结束 ▲▲▲
 
 
   @override
@@ -454,12 +465,17 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
           );
         },
       ),
+      // ▼▼▼ 修改点 3：Bottom Bar 的逻辑更新 ▼▼▼
       bottomNavigationBar: StreamBuilder<DocumentSnapshot>(
         stream: _propertyStream,
         builder: (context, snapshot) {
           if (!snapshot.hasData) return const SizedBox.shrink();
           final propertyData = (snapshot.data!.data() ?? {}) as Map<String, dynamic>;
           final String landlordUid = propertyData['landlordUid'] ?? '';
+          
+          // <-- 获取 communityName
+          final String communityName = propertyData['communityName'] ?? 'N/A';
+          
           final currentUser = FirebaseAuth.instance.currentUser;
           final bool isLandlord = currentUser != null && landlordUid == currentUser.uid;
           if (isLandlord) {
@@ -480,7 +496,8 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                         if (currentUser == null) {
                           _navigateToLogin();
                         } else {
-                          _showBookingSheet(context, landlordUid, widget.propertyId);
+                          // <-- 把 communityName 传进去
+                          _showBookingSheet(context, landlordUid, communityName);
                         }
                       },
                       icon: Icon(currentUser == null ? Icons.login : Icons.calendar_month, color: Colors.white),
@@ -501,6 +518,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
           );
         },
       ),
+      // ▲▲▲ 修改结束 ▲▲▲
     );
   }
 
@@ -567,7 +585,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   }
 
   IconData _getFeatureIcon(String feature) {
-     final Map<String, IconData> iconMap = {
+      final Map<String, IconData> iconMap = {
       'balcony': Icons.balcony,
       'air conditioner': Icons.ac_unit, 
       'water heater': Icons.water_drop,
@@ -616,6 +634,20 @@ class _ImageCarouselState extends State<_ImageCarousel> {
 
   @override
   Widget build(BuildContext context) {
+    // 如果图片列表为空，显示一个占位符
+    if (widget.imageUrls.isEmpty) {
+      return Container(
+        height: MediaQuery.of(context).size.height * 0.3,
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.2),
+          borderRadius: BorderRadius.circular(15),
+        ),
+        child: const Center(
+          child: Icon(Icons.image_not_supported, color: Colors.white54, size: 60),
+        ),
+      );
+    }
+    
     return Column(
       children: [
         ClipRRect(
@@ -759,8 +791,11 @@ class _FullScreenImageViewerState extends State<FullScreenImageViewer> {
 }
 
 // ===============================================================
-// 【预约弹窗的文本输入框】
+// 【表单字段】
 // ===============================================================
+// 这个辅助类已不再被此文件使用，但保留它不会出错，
+// 除非你确定其他地方也不再需要它。
+// 为保持整洁，你也可以删除它。
 class _BookingTextFormField extends StatelessWidget {
   final TextEditingController controller;
   final String labelText;
