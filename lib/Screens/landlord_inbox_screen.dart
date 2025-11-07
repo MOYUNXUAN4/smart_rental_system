@@ -3,11 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-
-// ▼▼▼ 【修改】: 导入新的卡片 ▼▼▼
-import '../Compoents/inbox_message_card.dart'; // 👈
+// 导入我们重构的卡片
+import '../Compoents/booking_notification_card.dart'; 
 import '../Compoents/meeting_card.dart';
-// ▲▲▲ 【修改】 ▲▲▲
+
+// ▼▼▼ 【新】导入导航所需组件和页面 ▼▼▼
+import '../Compoents/animated_bottom_nav.dart';
+import 'home_screen.dart';
+import 'landlord_screen.dart';
+// ▲▲▲ 【新】 ▲▲▲
 
 class LandlordInboxScreen extends StatefulWidget {
   const LandlordInboxScreen({super.key});
@@ -22,11 +26,37 @@ class _LandlordInboxScreenState extends State<LandlordInboxScreen> {
   late Stream<QuerySnapshot> _nextMeetingStream;
   late Stream<QuerySnapshot> _allBookingsStream;
 
+  // ▼▼▼ 【新】: 为底边栏添加导航逻辑 ▼▼▼
+  final int _currentNavIndex = 2; // "Inbox" 始终是索引 2
+
+  void _onNavTap(int index) {
+    if (index == 0) { // Home
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const HomeScreen(userRole: 'Landlord', initialIndex: 0)),
+      );
+    } else if (index == 1) { // List
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const HomeScreen(userRole: 'Landlord', initialIndex: 1)),
+      );
+    } else if (index == 2) { // Inbox
+      // 已经在 Inbox 页面，什么也不做
+    } else if (index == 3) { // My Account
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const LandlordScreen()),
+      );
+    }
+    // 注意：因为我们用 pushReplacement 替换了页面，所以不需要 setState
+  }
+  // ▲▲▲ 【新】 ▲▲▲
+
   @override
   void initState() {
     super.initState();
     
-    // Stream 1: 用于悬浮卡片 (保持不变)
+    // (Stream 初始化保持不变)
     _nextMeetingStream = FirebaseFirestore.instance
         .collection('bookings')
         .where('landlordUid', isEqualTo: currentLandlordUid)
@@ -36,7 +66,6 @@ class _LandlordInboxScreenState extends State<LandlordInboxScreen> {
         .limit(1)
         .snapshots();
         
-    // Stream 2: 用于历史列表 (保持不变)
     _allBookingsStream = FirebaseFirestore.instance
         .collection('bookings')
         .where('landlordUid', isEqualTo: currentLandlordUid)
@@ -47,6 +76,7 @@ class _LandlordInboxScreenState extends State<LandlordInboxScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBody: true, // 👈 【新】
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -73,7 +103,7 @@ class _LandlordInboxScreenState extends State<LandlordInboxScreen> {
                       onPressed: () => Navigator.of(context).pop(),
                     ),
                     const Text(
-                      'Inbox',
+                      'Inbox', 
                       style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
                     ),
                   ],
@@ -104,7 +134,7 @@ class _LandlordInboxScreenState extends State<LandlordInboxScreen> {
                 ),
               ),
               
-              // 4. 历史列表 StreamBuilder
+              // 4. 历史列表 StreamBuilder (保持不变)
               Expanded(
                 child: StreamBuilder<QuerySnapshot>(
                   stream: _allBookingsStream, 
@@ -113,7 +143,6 @@ class _LandlordInboxScreenState extends State<LandlordInboxScreen> {
                       return const Center(child: CircularProgressIndicator(color: Colors.white));
                     }
                     if (snapshot.hasError) {
-                      // 提醒用户创建索引
                       if (snapshot.error.toString().contains("cloud_firestore/failed-precondition")) {
                         return Padding(
                           padding: const EdgeInsets.all(16.0),
@@ -141,11 +170,10 @@ class _LandlordInboxScreenState extends State<LandlordInboxScreen> {
                         final bookingDoc = snapshot.data!.docs[index];
                         final bookingData = bookingDoc.data() as Map<String, dynamic>;
                         
-                        // ▼▼▼ 【修改】: 使用新的动画卡片 ▼▼▼
-                        return InboxMessageCard(
+                        return BookingNotificationCard(
                           bookingData: bookingData,
+                          showActions: false, 
                         );
-                        // ▲▲▲ 【修改】 ▲▲▲
                       },
                     );
                   },
@@ -155,6 +183,19 @@ class _LandlordInboxScreenState extends State<LandlordInboxScreen> {
           ),
         ),
       ),
+
+      // ▼▼▼ 【新】: 添加底边栏 ▼▼▼
+      bottomNavigationBar: AnimatedBottomNav(
+        currentIndex: _currentNavIndex, // 👈 设为 2 (Inbox)
+        onTap: _onNavTap, // 👈 使用新创建的导航函数
+        items: const [
+          BottomNavItem(icon: Icons.home, label: "Home Page"),
+          BottomNavItem(icon: Icons.list, label: "List"),
+          BottomNavItem(icon: Icons.inbox, label: "Inbox"), 
+          BottomNavItem(icon: Icons.person, label: "My Account"),
+        ],
+      ),
+      // ▲▲▲ 【新】 ▲▲▲
     );
   }
 }

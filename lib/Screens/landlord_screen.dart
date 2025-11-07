@@ -10,8 +10,6 @@ import 'package:smart_rental_system/Compoents/property_card.dart';
 
 // 导入所有屏幕
 import 'package:smart_rental_system/Screens/login_screen.dart'; 
-// (我们不再需要 AccountCheckScreen)
-// import 'package:smart_rental_system/Services/account_check_screen.dart'; 
 import 'package:smart_rental_system/Screens/home_screen.dart'; 
 import 'package:smart_rental_system/screens/add_property_screen.dart'; 
 import 'package:smart_rental_system/screens/landlord_bookings_screen.dart';
@@ -29,10 +27,7 @@ class _LandlordScreenState extends State<LandlordScreen> {
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
   late Stream<DocumentSnapshot> _userStream;
   late Stream<QuerySnapshot> _propertiesStream;
-  
-  // ▼▼▼ 【BUG 修复】: 修正这里的拼写错误 ▼▼▼
-  late Stream<QuerySnapshot> _bookingsStream; // 之前是 QueryDataransferSnapshot
-  // ▲▲▲ 【BUG 修复】 ▲▲▲
+  late Stream<QuerySnapshot> _bookingsStream; 
 
   int _currentNavIndex = 3; 
 
@@ -58,17 +53,17 @@ class _LandlordScreenState extends State<LandlordScreen> {
     }
   }
 
-  // (导航逻辑 - 已修复)
+  // ▼▼▼ 【BUG 修复】: 导航到 HomeScreen 时，传递 initialIndex ▼▼▼
   void _onNavTap(int index) {
     if (index == 0) { // Home
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => const HomeScreen(userRole: 'Landlord')), // 👈 传递角色
+        MaterialPageRoute(builder: (context) => const HomeScreen(userRole: 'Landlord', initialIndex: 0)), // 👈
       );
     } else if (index == 1) { // List
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => const HomeScreen(userRole: 'Landlord')), // 👈 传递角色
+        MaterialPageRoute(builder: (context) => const HomeScreen(userRole: 'Landlord', initialIndex: 1)), // 👈
       );
     } else if (index == 2) { // Inbox
       Navigator.push(
@@ -84,6 +79,7 @@ class _LandlordScreenState extends State<LandlordScreen> {
       _currentNavIndex = index;
     });
   }
+  // ▲▲▲ 【BUG 修复】 ▲▲▲
 
   // 退出函数 (保持不变)
   Future<void> _signOut(BuildContext context) async {

@@ -15,26 +15,33 @@ import 'package:smart_rental_system/screens/property_detail_screen.dart';
 import 'landlord_screen.dart';
 import 'tenant_screen.dart'; 
 
+// ▼▼▼ 【新】导入预约页面 (用于通知按钮) ▼▼▼
+import 'landlord_bookings_screen.dart';
+import 'tenant_bookings_screen.dart';
+// ▲▲▲ 【新】 ▲▲▲
+
 // 导入所有需要的组件
 import '../Compoents/animated_bottom_nav.dart'; 
 import 'package:smart_rental_system/Compoents/property_card.dart'; 
-
-// ▼▼▼ 【BUG 修复】: 添加 'glass_card.dart' 导入 ▼▼▼
 import '../Compoents/glass_card.dart';
-// ▲▲▲ 【BUG 修复】 ▲▲▲
 
 
 class HomeScreen extends StatefulWidget {
   final String userRole;
-  const HomeScreen({super.key, this.userRole = 'Tenant'}); 
+  final int initialIndex;
+
+  const HomeScreen({
+    super.key, 
+    this.userRole = 'Tenant',
+    this.initialIndex = 0, // 👈 默认打开索引 0 (Home)
+  }); 
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _bottomIndex = 0; 
-
+  late int _bottomIndex; 
   late final List<Widget> _pages; 
   static const int _accountTabIndex = 3; 
   late final List<BottomNavItem> _navItems; 
@@ -43,6 +50,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _bottomIndex = widget.initialIndex; 
+
     _pages = [
       _HomeContent(userRole: widget.userRole),  
       const PropertyListScreen(),           
@@ -67,7 +76,6 @@ class _HomeScreenState extends State<HomeScreen> {
   // (导航逻辑 - 已修复)
   void _onBottomNavTap(int index) {
     if (index == _accountTabIndex) {
-      // 索引 3 (Account) - 导航到 *真正* 的账户页面
       if (isLandlord) {
         Navigator.push(
           context,
@@ -80,14 +88,12 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
     } else if (index == 2 && isLandlord) {
-      // Landlord 点击 索引 2 (Inbox)
       Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => const LandlordInboxScreen()),
       );
     }
     else {
-      // 索引 0, 1, 2 (Home, List, Favorites) 只需更新状态以切换 IndexedStack
       setState(() {
         _bottomIndex = index;
       });
@@ -136,7 +142,7 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 // ===============================================================
-// _HomeContent: (这个私有 Widget 保持不变)
+// _HomeContent: (这里是主要修改的地方)
 // ===============================================================
 class _HomeContent extends StatefulWidget {
   final String userRole;
@@ -150,6 +156,11 @@ class _HomeContentState extends State<_HomeContent> {
   late Stream<DocumentSnapshot> _userStream; 
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
   late Stream<QuerySnapshot> _propertiesStream;
+
+  // ▼▼▼ 【新】: 为通知铃铛添加 Stream ▼▼▼
+  late Stream<QuerySnapshot> _notificationStream;
+  // ▲▲▲ 【新】 ▲▲▲
+
   bool get isLandlord => widget.userRole == 'Landlord';
   final String _backgroundImagePath = 'assets/images/mainPageBackGround.png';
   
@@ -158,8 +169,31 @@ class _HomeContentState extends State<_HomeContent> {
     super.initState();
     if (_uid != null) {
       _userStream = FirebaseFirestore.instance.collection('users').doc(_uid).snapshots();
+
+      // ▼▼▼ 【新】: 根据角色初始化通知 Stream ▼▼▼
+      if (isLandlord) {
+        // 房东的通知 = 待处理 (pending) 的预约
+        _notificationStream = FirebaseFirestore.instance
+            .collection('bookings')
+            .where('landlordUid', isEqualTo: _uid)
+            .where('status', isEqualTo: 'pending')
+            .snapshots();
+      } else {
+        // 租客的通知 = 已被处理 (approved/rejected) 且未读 (isReadByTenant == false) 的预约
+        _notificationStream = FirebaseFirestore.instance
+            .collection('bookings')
+            .where('tenantUid', isEqualTo: _uid)
+            .where('status', whereIn: ['approved', 'rejected'])
+            .where('isReadByTenant', isEqualTo: false)
+            .snapshots();
+      }
+      // ▲▲▲ 【新】 ▲▲▲
+
     } else {
       _userStream = Stream.error("User not logged in");
+      // ▼▼▼ 【新】: 初始化
+      _notificationStream = Stream.error("User not logged in");
+      // ▲▲▲ 【新】 ▲▲▲
     }
     _propertiesStream = FirebaseFirestore.instance.collection('properties').snapshots();
   }
@@ -211,6 +245,16 @@ class _HomeContentState extends State<_HomeContent> {
     );
   }
 
+  // ▼▼▼ 【新】: 为通知铃铛添加导航函数 ▼▼▼
+  void _goToLandlordBookings() {
+    Navigator.push(context, MaterialPageRoute(builder: (context) => const LandlordBookingsScreen()));
+  }
+  
+  void _goToTenantBookings() {
+    Navigator.push(context, MaterialPageRoute(builder: (context) => const TenantBookingsScreen()));
+  }
+  // ▲▲▲ 【新】 ▲▲▲
+
   @override
   Widget build(BuildContext context) {
     const Color imageDissolveColor = Color(0xFF153a44);
@@ -230,10 +274,35 @@ class _HomeContentState extends State<_HomeContent> {
           pinned: true,
           expandedHeight: expandedAppBarHeight,
           actions: [
-            IconButton(
-              icon: const Icon(Icons.notifications, color: Colors.white),
-              onPressed: () {},
+            
+            // ▼▼▼ 【修改】: 替换旧的通知按钮 ▼▼▼
+            StreamBuilder<QuerySnapshot>(
+              stream: _notificationStream, // 👈 监听新的通知 stream
+              builder: (context, snapshot) {
+                int count = 0;
+                if (snapshot.hasData) {
+                  count = snapshot.data!.docs.length; // 👈 获取通知数量
+                }
+                
+                return IconButton(
+                  icon: Badge(
+                    label: Text(count.toString()),
+                    isLabelVisible: count > 0, // 👈 仅在 count > 0 时显示红点
+                    backgroundColor: Colors.redAccent,
+                    child: const Icon(Icons.notifications, color: Colors.white),
+                  ),
+                  onPressed: () {
+                    // 👈 根据角色跳转
+                    if (isLandlord) {
+                      _goToLandlordBookings(); // 房东 -> 待处理页面
+                    } else {
+                      _goToTenantBookings(); // 租客 -> 状态页面
+                    }
+                  },
+                );
+              }
             ),
+            // ▲▲▲ 【修改】 ▲▲▲
             
             // (用户头像/名字 StreamBuilder - 保持不变)
             StreamBuilder<DocumentSnapshot>(
@@ -258,7 +327,7 @@ class _HomeContentState extends State<_HomeContent> {
                 final String? avatarUrl = userData['avatarUrl'];
 
                 return GestureDetector(
-                  onTap: _goToAccount, // 👈 (使用已修复的 _goToAccount)
+                  onTap: _goToAccount, 
                   child: Padding(
                     padding: const EdgeInsets.only(right: 16.0, left: 8.0),
                     child: Row(
@@ -377,7 +446,7 @@ class _HomeContentState extends State<_HomeContent> {
                   isLandlord
                     ? _buildActionButton(context, Icons.inbox, "Inbox", _goToLandlordInbox) 
                     : _buildActionButton(context, Icons.star, "Favorites", _goToFavorites), 
-                  _buildActionButton(context, Icons.person, "My Account", _goToAccount), // 👈 (使用已修复的 _goToAccount)
+                  _buildActionButton(context, Icons.person, "My Account", _goToAccount), 
                 ],
               ),
             ),
@@ -439,14 +508,12 @@ class _HomeContentState extends State<_HomeContent> {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            // ▼▼▼ 【BUG 修复】: 使用 GlassCard (现在已导入) ▼▼▼
             child: GlassCard( 
               child: SizedBox(
                 height: 100, 
                 child: Center(child: CircularProgressIndicator(color: Colors.white)),
               ),
             ),
-            // ▲▲▲ 【BUG 修复】 ▲▲▲
           );
         }
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty || snapshot.hasError) {
@@ -516,6 +583,7 @@ class _HomeContentState extends State<_HomeContent> {
     );
   }
 }
+
 // (辅助类 _NavItemData，你的代码需要它)
 class _NavItemData {
   final IconData icon;
