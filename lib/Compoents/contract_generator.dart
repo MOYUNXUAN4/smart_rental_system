@@ -5,13 +5,10 @@ import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
-// 移除了 open_file 导入，因为我们只保存不打开
 
 class ContractGenerator {
-  // ✅ 1. 修改函数签名：重命名并更改返回类型
   static Future<File> generateAndSaveContract({
     required String landlordName,
-    // ✅ 2. 设为可选，以支持模板
     String? tenantName,
     required String propertyAddress,
     required String rentAmount,
@@ -38,7 +35,6 @@ class ContractGenerator {
       ttf = pw.Font.helvetica(); 
     }
 
-    // ✅ 3. 更新内容以处理 null (使用 '??' 提供占位符)
     String contractContent = language == 'zh'
         ? '''
 租赁合同
@@ -91,15 +87,11 @@ Tenant: ________
       await file.writeAsBytes(await pdf.save());
       print("[INFO] PDF saved successfully to: $filePath");
 
-      // ✅ 4. 移除 'OpenFile.open'
-      // await OpenFile.open(file.path); 
 
-      // ✅ 5. 返回 File 对象
       return file;
 
     } catch(e) {
       print("[ERROR] Failed to save PDF: $e");
-      // 抛出错误，以便 _generateContract 函数可以捕获它
       throw Exception('Failed to save PDF: $e'); 
     }
   }

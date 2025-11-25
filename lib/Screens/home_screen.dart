@@ -1,27 +1,31 @@
 // lib/Screens/home_screen.dart
-import 'dart:math';
 import 'dart:ui';
-
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:math'; 
 import 'package:flutter/material.dart';
-import 'package:smart_rental_system/Compoents/property_card.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+// ✅ 导入搜索页面
+import 'package:smart_rental_system/Screens/search_screen.dart'; // 如果报错，请检查是否需要改为 'Screens'
+
 // 导入其他屏幕
 import 'package:smart_rental_system/Screens/property_list_screen.dart';
-// ✅ 按照您的要求，导入 SearchScreen
-import 'package:smart_rental_system/Screens/search_screen.dart';
-import 'package:smart_rental_system/screens/favorite_screen.dart';
-import 'package:smart_rental_system/screens/landlord_inbox_screen.dart';
-import 'package:smart_rental_system/screens/property_detail_screen.dart';
+import 'package:smart_rental_system/screens/favorite_screen.dart'; 
+import 'login_screen.dart';
+import '../Services/account_check_screen.dart'; 
+import 'package:smart_rental_system/screens/landlord_inbox_screen.dart'; 
+import 'package:smart_rental_system/screens/property_detail_screen.dart'; 
+import 'landlord_screen.dart';
+import 'tenant_screen.dart'; 
+
+// 导入预约页面
+import 'landlord_bookings_screen.dart';
+import 'tenant_bookings_screen.dart';
 
 // 导入组件
-import '../Compoents/animated_bottom_nav.dart';
+import '../Compoents/animated_bottom_nav.dart'; 
+import 'package:smart_rental_system/Compoents/property_card.dart'; 
 import '../Compoents/glass_card.dart';
-// 导入预约页面 (用于通知按钮)
-import 'landlord_bookings_screen.dart';
-import 'landlord_screen.dart';
-import 'tenant_bookings_screen.dart';
-import 'tenant_screen.dart';
 
 
 class HomeScreen extends StatefulWidget {
@@ -220,7 +224,7 @@ class _HomeContentState extends State<_HomeContent> {
     Navigator.push(context, MaterialPageRoute(builder: (context) => const TenantBookingsScreen()));
   }
 
-  // ✅ 导航到 SearchScreen 的辅助函数
+  // ✅ 跳转到 SearchScreen
   void _goToSearch() {
     Navigator.push(
       context,
@@ -344,6 +348,9 @@ class _HomeContentState extends State<_HomeContent> {
                     ),
                   ),
                 ),
+                // =====================================================
+                // ✅ 修复：搜索栏点击问题
+                // =====================================================
                 Positioned(
                   left: 24,
                   right: 24,
@@ -352,55 +359,59 @@ class _HomeContentState extends State<_HomeContent> {
                     borderRadius: BorderRadius.circular(30.0),
                     child: BackdropFilter(
                       filter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
-                      child: Container(
-                        height: searchBarHeight,
-                        padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(30.0),
-                          border: Border.all(color: Colors.white.withOpacity(0.08)),
-                        ),
-                        child: Row(
-                          children: [
-                            const SizedBox(width: 6),
-                            const Icon(Icons.search, color: Colors.white70),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: TextField(
-                                // ✅ 优化：设置为只读，点击即跳转
-                                readOnly: true, 
-                                onTap: _goToSearch, 
-                                cursorColor: const Color(0xFF4DA3FF),
-                                style: const TextStyle(color: Colors.white),
-                                decoration: InputDecoration(
-                                  hintText: 'Search...',
-                                  hintStyle: TextStyle(color: Colors.lightBlue.shade100),
-                                  border: InputBorder.none,
-                                  isCollapsed: true,
-                                  contentPadding: const EdgeInsets.symmetric(vertical: 16),
+                      child: GestureDetector( // 1. 外层包裹 GestureDetector
+                        onTap: _goToSearch,   // 2. 确保点击整个区域都跳转
+                        behavior: HitTestBehavior.opaque, // 3. 确保点击空白处也生效
+                        child: Container(
+                          height: searchBarHeight,
+                          padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(30.0),
+                            border: Border.all(color: Colors.white.withOpacity(0.08)),
+                          ),
+                          child: Row(
+                            children: [
+                              const SizedBox(width: 6),
+                              const Icon(Icons.search, color: Colors.white70),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: IgnorePointer( // 4. 忽略输入框的点击，透传给外层
+                                  child: TextField(
+                                    readOnly: true, 
+                                    cursorColor: const Color(0xFF4DA3FF),
+                                    style: const TextStyle(color: Colors.white),
+                                    decoration: InputDecoration(
+                                      hintText: 'Search...',
+                                      hintStyle: TextStyle(color: Colors.lightBlue.shade100),
+                                      border: InputBorder.none,
+                                      isCollapsed: true,
+                                      contentPadding: const EdgeInsets.symmetric(vertical: 16),
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
-                            Container(
-                              margin: const EdgeInsets.only(right: 6),
-                              child: ElevatedButton(
-                                // ✅ 优化：点击按钮也跳转
-                                onPressed: _goToSearch, 
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF1D5DC7),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                  elevation: 2,
+                              Container(
+                                margin: const EdgeInsets.only(right: 6),
+                                child: ElevatedButton(
+                                  onPressed: _goToSearch, 
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF1D5DC7),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                    elevation: 2,
+                                  ),
+                                  child: const Text('Search', style: TextStyle(color: Colors.white)),
                                 ),
-                                child: const Text('Search', style: TextStyle(color: Colors.white)),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
+                // =====================================================
               ],
             ),
           ),
@@ -413,7 +424,7 @@ class _HomeContentState extends State<_HomeContent> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  // ✅ 优化：这里的 Search 按钮也跳转
+                  // ✅ 确保这里的圆形搜索按钮也能跳转
                   _buildActionButton(context, Icons.search, "Search", _goToSearch),
                   _buildActionButton(context, Icons.list_alt, "List", _goToList), 
                   isLandlord

@@ -16,6 +16,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../Screens/login_screen.dart'; 
 
 // 2. 房东仪表板 (当房东点击 "My Account" 时会用到)
+// ignore: unused_import
 import '../Screens/landlord_screen.dart';
 
 // 3. 租户的主页 (HomeScreen)
@@ -43,51 +44,49 @@ class _AccountCheckScreenState extends State<AccountCheckScreen> {
     });
   }
 
-  // 使用 Firebase 逻辑的核心导航函数
+
   void _checkAuthAndNavigate() async {
-    // 1. 检查登录状态
+    // 1. Check if user is logged in
     final user = FirebaseAuth.instance.currentUser;
     final isLoggedIn = user != null;
 
     if (!isLoggedIn) {
-      // 1.1 未登录：跳转到 LoginScreen
+      // 1.1 if not logged in, navigate to LoginScreen
       _navigateTo(const LoginScreen()); 
       return;
     }
 
-    // 2. 已登录：获取用户类型并导航
+    // 2. If logged in: Get user type and navigate
     Widget targetScreen;
     String userRoleFromDB = 'unknown'; 
 
     try {
-      // 从 Firestore 获取用户类型
+      // get user document from Firestore
       final doc = await FirebaseFirestore.instance
-          .collection('users') // 确保集合名称正确
-          .doc(user!.uid)
+          .collection('users') // make sure this matches your Firestore collection name
+          .doc(user.uid)
           .get();
 
-      // (保持使用 'userType' 字段, 这是正确的)
+      
       userRoleFromDB = doc.exists && doc.data() != null 
           ? doc.data()!['userType'] ?? 'unknown' 
           : 'unknown';
 
-      // 导航到对应的仪表板
+      // navigate based on user type
       if (userRoleFromDB == 'Landlord') {
-        // ▼▼▼ 【你要求的修改】 ▼▼▼
-        // 房东登录后，也跳转到 HomeScreen，但传递 'Landlord' 角色
+        // after landlord modification, Landlord also goes to HomeScreen
         targetScreen = const HomeScreen(userRole: 'Landlord');
-        // ▲▲▲ 【修改结束】 ▲▲▲
       } else if (userRoleFromDB == 'Tenant') {
-        // 租客登录后，跳转到 HomeScreen，传递 'Tenant' 角色
+        // after tenant modification, Tenant goes to HomeScreen
         targetScreen = const HomeScreen(userRole: 'Tenant'); 
       } else {
-        // 未知类型或数据异常，导回登录界面
-        targetScreen = const LoginScreen(); 
+        // unknown type or data issue, navigate back to login
+        targetScreen = const LoginScreen();
         // ignore: avoid_print
         print('Warning: Unknown user type or missing data: $userRoleFromDB');
       }
     } catch (e) {
-      // 错误处理，例如网络问题或权限问题
+      // error handling: navigate to login on any error
       print('Error fetching user type in AccountCheckScreen: $e');
       targetScreen = const LoginScreen();
     }

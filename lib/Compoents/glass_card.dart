@@ -1,7 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 
-/// 一个可重用的毛玻璃背景卡片
 class GlassCard extends StatelessWidget {
   final Widget child;
   

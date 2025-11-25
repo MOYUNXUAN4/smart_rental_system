@@ -70,12 +70,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
           'createdAt': Timestamp.now(),
         });
 
-        // 4. ✅ 关键修复：导航到 AccountCheckScreen
+        // 4. Navigate to AccountCheckScreen after successful registration
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("Registration Successful! Welcome!")),
           );
-          // 清除堆栈并导航到检查器，以显示正确的 Dashboard
+          // Clear navigation stack and go to AccountCheckScreen
           Navigator.pushAndRemoveUntil(
             context,
             MaterialPageRoute(builder: (context) => const AccountCheckScreen()),
