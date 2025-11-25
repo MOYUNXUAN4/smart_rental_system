@@ -1,31 +1,81 @@
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import 'package:smart_rental_system/Compoents/property_card.dart';
 import 'package:smart_rental_system/screens/property_detail_screen.dart';
 
 class PropertyListScreen extends StatefulWidget {
-  const PropertyListScreen({super.key});
+  // ✅ 1. 新增参数：用于接收从 SearchScreen 传过来的筛选结果
+  final List<DocumentSnapshot>? preFilteredDocs;
+
+  const PropertyListScreen({super.key, this.preFilteredDocs});
 
   @override
   State<PropertyListScreen> createState() => _PropertyListScreenState();
 }
 
 class _PropertyListScreenState extends State<PropertyListScreen> {
-  // ✅ 1. 创建一个 Stream 来获取 *所有* 房源
   late Stream<QuerySnapshot> _propertiesStream;
 
   @override
   void initState() {
     super.initState();
-    _propertiesStream = FirebaseFirestore.instance
-        .collection('properties')
-        // .orderBy('createdAt', descending: true) // (可选) 按创建时间排序
-        .snapshots();
+    // 只有在没有预筛选数据时，才需要初始化 Stream
+    if (widget.preFilteredDocs == null) {
+      _propertiesStream = FirebaseFirestore.instance
+          .collection('properties')
+          .orderBy('createdAt', descending: true) 
+          .snapshots();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // 2. 使用 StreamBuilder 来构建列表
+    // ============================================================
+    // ✅ 场景 1: 显示筛选结果 (从 SearchScreen 跳转过来)
+    // ============================================================
+    if (widget.preFilteredDocs != null) {
+      return Scaffold(
+        extendBodyBehindAppBar: true, // 让背景延伸到 AppBar 后面
+        appBar: AppBar(
+          title: Text("Filtered Results (${widget.preFilteredDocs!.length})"),
+          backgroundColor: Colors.transparent, // 透明 AppBar
+          elevation: 0,
+          iconTheme: const IconThemeData(color: Colors.white),
+          titleTextStyle: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+        ),
+        body: Stack(
+          children: [
+            // 1. 必须补上背景渐变 (因为它是独立页面，没有 HomeScreen 的背景)
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                  colors: [Color(0xFF153a44), Color(0xFF295a68), Color(0xFF5d8fa0), Color(0xFF94bac4)],
+                ),
+              ),
+            ),
+            // 2. 显示筛选后的列表
+            ListView.builder(
+              // 这里不需要 top: 100，因为有 AppBar 了，给一点正常间距即可
+              padding: const EdgeInsets.only(top: 100, left: 16, right: 16, bottom: 20),
+              itemCount: widget.preFilteredDocs!.length,
+              itemBuilder: (context, index) {
+                final doc = widget.preFilteredDocs![index];
+                return PropertyCard(
+                  propertyData: doc.data() as Map<String, dynamic>,
+                  propertyId: doc.id,
+                  onTap: () => _navigateToDetail(doc.id),
+                );
+              },
+            ),
+          ],
+        ),
+      );
+    }
+
+    // ============================================================
+    // ✅ 场景 2: 默认显示 (作为 HomeScreen 的 Tab) - 保持你原有的逻辑
+    // ============================================================
     return StreamBuilder<QuerySnapshot>(
       stream: _propertiesStream,
       builder: (context, snapshot) {
@@ -34,7 +84,6 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
         }
 
         if (snapshot.hasError) {
-          print("Error loading properties: ${snapshot.error}");
           return const Center(child: Text("Error loading properties", style: TextStyle(color: Colors.white70)));
         }
         
@@ -47,11 +96,10 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
           );
         }
         
-        // 3. 使用 ListView 显示 PropertyCard
         final properties = snapshot.data!.docs;
         
         return ListView.builder(
-          // (使用 padding 确保列表不会被 AppBar 或底边栏遮挡)
+          // 保持你原有的 Padding，适应 HomeScreen 的布局
           padding: const EdgeInsets.only(top: 100, left: 16, right: 16, bottom: 100), 
           itemCount: properties.length,
           itemBuilder: (context, index) {
@@ -61,21 +109,21 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
             return PropertyCard(
               propertyData: data,
               propertyId: doc.id,
-              onTap: () {
-                // ✅ 4. 点击卡片导航到 *详情页* (PropertyDetailScreen)
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => PropertyDetailScreen(
-                      propertyId: doc.id, // 传递房源 ID
-                    ),
-                  ),
-                );
-              },
+              onTap: () => _navigateToDetail(doc.id),
             );
           },
         );
       },
+    );
+  }
+
+  // 辅助函数：跳转详情页
+  void _navigateToDetail(String propertyId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PropertyDetailScreen(propertyId: propertyId),
+      ),
     );
   }
 }
