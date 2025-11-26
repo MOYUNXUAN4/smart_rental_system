@@ -1,21 +1,20 @@
 // lib/Screens/property_detail_screen.dart
 import 'dart:ui';
-import 'package:flutter/material.dart';
+
+import 'package:carousel_slider/carousel_slider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:intl/intl.dart'; 
-import 'package:smart_rental_system/screens/add_property_screen.dart'; 
-
-import 'package:carousel_slider/carousel_slider.dart'; 
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:firebase_auth/firebase_auth.dart'; 
-
-import '../Compoents/glass_card.dart';
-import '../Compoents/property_display_widgets.dart';
-import '../Compoents/landlord_contact_card.dart';
-import '../Screens/login_screen.dart';
+import 'package:intl/intl.dart';
+import 'package:smart_rental_system/screens/add_property_screen.dart';
 
 // ✅ 1. 导入收藏按钮
-import '../Compoents/favorite_button.dart'; 
+import '../Compoents/favorite_button.dart';
+import '../Compoents/glass_card.dart';
+import '../Compoents/landlord_contact_card.dart';
+import '../Compoents/property_display_widgets.dart';
+import '../Screens/login_screen.dart'; 
 
 
 class PropertyDetailScreen extends StatefulWidget {

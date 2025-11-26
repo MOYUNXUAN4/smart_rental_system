@@ -1,10 +1,10 @@
-import 'dart:ui';
 import 'dart:math';
-import 'package:flutter/material.dart';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 
 // 导入组件 (请确保路径正确)
-import '../Compoents/glass_card.dart'; 
+import '../Compoents/glass_card.dart';
 import 'property_list_screen.dart'; 
 
 class SearchScreen extends StatefulWidget {
@@ -169,12 +169,34 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     });
   }
 
-  void _navigateToResults() {
+ void _navigateToResults() {
+    // ✅ 1. 数据清洗：转换为纯 Map，防止模拟器崩溃
+    final List<Map<String, dynamic>> cleanData = _filteredProperties.map((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      data['id'] = doc.id; // 务必把 ID 塞进去，PropertyListScreen 需要它
+      
+      return {
+        'id': doc.id,
+        'price': data['price'] ?? 0,
+        'size_sqft': data['size_sqft'] ?? '0',
+        'bedrooms': data['bedrooms'] ?? 0,
+        'bathrooms': data['bathrooms'] ?? 0,
+        'parking': data['parking'] ?? 0,
+        'furnishing': data['furnishing'] ?? 'N/A',
+        'communityName': data['communityName'] ?? 'Unknown',
+        'imageUrls': data['imageUrls'],
+        'features': data['features'] ?? [],
+        'facilities': data['facilities'] ?? [],
+        'description': data['description'] ?? '',
+      };
+    }).toList();
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => PropertyListScreen(
-          preFilteredDocs: _filteredProperties,
+          // ✅ 2. 修复参数名：使用 preFilteredData
+          preFilteredData: cleanData, 
         ),
       ),
     );

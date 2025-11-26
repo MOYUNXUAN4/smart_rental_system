@@ -1,21 +1,16 @@
 import 'dart:async';
-import 'dart:ui';
-import 'package:flutter/material.dart';
+import 'dart:ui'; // 必须导入这个以使用 ImageFilter
+
 import 'package:cloud_firestore/cloud_firestore.dart';
-
-// 导入服务与组件
-import '../Services/favorite_service.dart';
-import '../Compoents/property_card.dart';
-import '../Compoents/glass_card.dart';
-import 'package:smart_rental_system/Screens/property_detail_screen.dart';
+import 'package:flutter/material.dart';
 import 'package:smart_rental_system/Screens/search_screen.dart';
-import 'package:smart_rental_system/Screens/compare_screen.dart';
 
-
-// ✅ Import the new GlowingWrapper
-import '../Compoents/glowing_wrapper.dart'; 
-
-
+// 确保导入你原本的组件路径
+import '../Compoents/glass_card.dart';
+import '../Compoents/property_card.dart';
+import '../Services/favorite_service.dart';
+import 'compare_screen.dart';
+import 'property_detail_screen.dart';
 
 enum SortType { newest, priceLowToHigh, priceHighToLow }
 
@@ -26,36 +21,31 @@ class FavoritesScreen extends StatefulWidget {
   State<FavoritesScreen> createState() => _FavoritesScreenState();
 }
 
-class _FavoritesScreenState extends State<FavoritesScreen> with TickerProviderStateMixin {
+class _FavoritesScreenState extends State<FavoritesScreen> {
   final FavoriteService _favoriteService = FavoriteService();
   SortType _currentSort = SortType.newest;
-  
+
   List<DocumentSnapshot> _properties = [];
-  bool _isLoading = true; 
+  bool _isLoading = true;
   StreamSubscription? _subscription;
 
+  // 选择模式状态
   bool _isSelectionMode = false;
   final Set<String> _selectedIds = {};
-
-  late AnimationController _glowController;
 
   @override
   void initState() {
     super.initState();
     _setupDataListener();
-    _glowController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
   }
 
   @override
   void dispose() {
     _subscription?.cancel();
-    _glowController.dispose();
     super.dispose();
   }
 
+  // --- 数据监听逻辑 (保持不变) ---
   void _setupDataListener() {
     _subscription = _favoriteService.getFavoriteIdsStream().listen((ids) async {
       if (ids.isEmpty) {
@@ -63,17 +53,20 @@ class _FavoritesScreenState extends State<FavoritesScreen> with TickerProviderSt
         return;
       }
       try {
-        final futures = ids.map((id) => 
+        // 根据ID列表获取最新数据
+        final futures = ids.map((id) =>
           FirebaseFirestore.instance.collection('properties').doc(id).get()
         );
         final results = await Future.wait(futures);
         final validDocs = results.where((doc) => doc.exists).toList();
-        _sortDocs(validDocs, ids);
+        
+        _sortDocs(validDocs, ids); // 排序
 
         if (mounted) {
           setState(() {
             _properties = validDocs;
             _isLoading = false;
+            // 清理已经不存在于收藏列表中的选中项
             _selectedIds.removeWhere((id) => !validDocs.any((doc) => doc.id == id));
           });
         }
@@ -94,10 +87,13 @@ class _FavoritesScreenState extends State<FavoritesScreen> with TickerProviderSt
         case SortType.priceLowToHigh: return priceA.compareTo(priceB);
         case SortType.priceHighToLow: return priceB.compareTo(priceA);
         case SortType.newest: default:
+          // 保持加入收藏的顺序 (原本的ID列表顺序)
           return originalIds.indexOf(a.id).compareTo(originalIds.indexOf(b.id));
       }
     });
   }
+
+  // --- 交互逻辑 ---
 
   void _toggleSelectionMode() {
     setState(() {
@@ -106,7 +102,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> with TickerProviderSt
     });
   }
 
-  void _handleItemTap(String id, bool isUnavailable) {
+  void _handleItemTap(String id) {
     if (_isSelectionMode) {
       setState(() {
         if (_selectedIds.contains(id)) {
@@ -115,9 +111,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> with TickerProviderSt
           if (_selectedIds.length >= 3) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text("You can compare up to 3 properties."),
-                backgroundColor: Color(0xFF1D5DC7),
-                duration: Duration(seconds: 1),
+                content: Text("Compare up to 3 properties"),
+                backgroundColor: Colors.orange,
               ),
             );
             return;
@@ -126,12 +121,15 @@ class _FavoritesScreenState extends State<FavoritesScreen> with TickerProviderSt
         }
       });
     } else {
-      if (!isUnavailable) {
-        Navigator.push(context, MaterialPageRoute(builder: (context) => PropertyDetailScreen(propertyId: id)));
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("This property is no longer available.")));
-      }
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => PropertyDetailScreen(propertyId: id)),
+      );
     }
+  }
+
+  void _handleRemoveFavorite(String id) {
+    _favoriteService.toggleFavorite(id);
   }
 
   void _navigateToCompare() {
@@ -140,19 +138,11 @@ class _FavoritesScreenState extends State<FavoritesScreen> with TickerProviderSt
     try {
       final selectedDocs = _properties.where((doc) => _selectedIds.contains(doc.id)).toList();
       
+      // 转换数据格式适配 CompareScreen
       final List<Map<String, dynamic>> propertiesData = selectedDocs.map((doc) {
         var data = doc.data() as Map<String, dynamic>;
-        return {
-          'price': data['price'] ?? 0,
-          'size_sqft': data['size_sqft'] ?? '0',
-          'bedrooms': data['bedrooms'] ?? 0,
-          'bathrooms': data['bathrooms'] ?? 0,
-          'parking': data['parking'] ?? 0,
-          'furnishing': data['furnishing'] ?? 'N/A',
-          'communityName': data['communityName'] ?? 'Unknown',
-          'imageUrls': data['imageUrls'],
-          'features': data['features'] ?? [],
-        };
+        data['id'] = doc.id; // 确保ID存在
+        return data;
       }).toList();
 
       Navigator.push(
@@ -166,6 +156,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> with TickerProviderSt
     }
   }
 
+  // --- 排序菜单 ---
   void _showGlassSortMenu() {
     showModalBottomSheet(
       context: context,
@@ -180,10 +171,10 @@ class _FavoritesScreenState extends State<FavoritesScreen> with TickerProviderSt
               children: [
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
-                  child: Text("Sort By", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                  child: Text("Sort Favorites By", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
                 ),
                 const Divider(color: Colors.white24),
-                _buildSortOption("Date Added (Newest)", SortType.newest),
+                _buildSortOption("Date Added (Default)", SortType.newest),
                 _buildSortOption("Price (Low to High)", SortType.priceLowToHigh),
                 _buildSortOption("Price (High to Low)", SortType.priceHighToLow),
                 const SizedBox(height: 10),
@@ -201,7 +192,10 @@ class _FavoritesScreenState extends State<FavoritesScreen> with TickerProviderSt
       onTap: () {
         setState(() {
           _currentSort = type;
-          _sortDocs(_properties, _properties.map((e) => e.id).toList());
+          // 重新触发排序 (ID列表需要重新获取或缓存，这里简单起见让流重新处理，或者直接对当前列表排序)
+           // 简单Hack: 手动对当前 _properties 排序
+           List<String> currentIds = _properties.map((e) => e.id).toList();
+           _sortDocs(_properties, currentIds);
         });
         Navigator.pop(context);
       },
@@ -223,81 +217,42 @@ class _FavoritesScreenState extends State<FavoritesScreen> with TickerProviderSt
     );
   }
 
-  Widget _buildCompareToggleButton() {
-    return Center(
-      child: GestureDetector(
-        onTap: _toggleSelectionMode,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              margin: const EdgeInsets.only(right: 16),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white30),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(_isSelectionMode ? Icons.close : Icons.compare_arrows, size: 16, color: Colors.white),
-                  const SizedBox(width: 6),
-                  Text(
-                    _isSelectionMode ? "Cancel" : "Compare",
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     const Color bgDark = Color(0xFF153a44);
     const Color accentBlue = Color(0xFF1D5DC7);
-    const Color glowColor = Color(0xFF00E5FF); 
+    const Color glowColor = Color(0xFF00E5FF);
+    final bottomSafe = MediaQuery.of(context).padding.bottom;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: Text(
-          _isSelectionMode ? "Selected (${_selectedIds.length})" : "My Favorites",
-          style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)
-        ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          if (_properties.isNotEmpty) _buildCompareToggleButton(),
-          if (!_isSelectionMode && _properties.isNotEmpty)
-            IconButton(icon: const Icon(Icons.sort, color: Colors.white), onPressed: _showGlassSortMenu),
-          const SizedBox(width: 12),
-        ],
-      ),
+      // 移除默认 AppBar，改用 Stack 里的 Header
       body: Stack(
         children: [
+          // 1. 背景渐变
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                colors: [bgDark, Color(0xFF295a68), Color(0xFF5d8fa0), Color(0xFF94bac4)],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  bgDark,
+                  Color(0xFF295a68),
+                  Color(0xFF5d8fa0),
+                  Color(0xFF94bac4),
+                ],
               ),
             ),
           ),
 
+          // 2. 主体内容
           if (_isLoading)
             const Center(child: CircularProgressIndicator(color: Colors.white))
           else if (_properties.isEmpty)
             _buildEmptyState()
           else
             ListView.builder(
-              padding: const EdgeInsets.only(top: 100, left: 16, right: 16, bottom: 140),
+              padding: const EdgeInsets.only(top: 130, left: 20, right: 20, bottom: 200),
               itemCount: _properties.length,
               itemBuilder: (context, index) {
                 final doc = _properties[index];
@@ -306,107 +261,250 @@ class _FavoritesScreenState extends State<FavoritesScreen> with TickerProviderSt
                 final bool isSelected = _selectedIds.contains(doc.id);
 
                 return GestureDetector(
-                  onTap: () => _handleItemTap(doc.id, isUnavailable),
-                  
-                  // ✅ 修复：使用新的容器
-                  child: _GlowBorderContainer(
-                    isSelected: _isSelectionMode && isSelected,
-                    animation: _glowController,
-                    child: Stack(
-                      children: [
-                        IgnorePointer(
-                          ignoring: true,
-                          child: PropertyCard(
-                            propertyData: data,
-                            propertyId: doc.id,
-                            showFavoriteButton: !_isSelectionMode,
-                            // ✅ 关键：去掉卡片自身边距，由外层容器控制
-                            margin: EdgeInsets.zero, 
-                            onTap: () {},
+                  onTap: () => _handleItemTap(doc.id),
+                  child: AnimatedScale(
+                    scale: isSelected && _isSelectionMode ? 0.96 : 1.0,
+                    duration: const Duration(milliseconds: 200),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      margin: const EdgeInsets.only(bottom: 20),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        // 选中时发光边框
+                        border: _isSelectionMode && isSelected
+                            ? Border.all(color: glowColor, width: 2)
+                            : null,
+                        boxShadow: _isSelectionMode && isSelected
+                            ? [
+                                BoxShadow(
+                                  color: glowColor.withOpacity(0.45),
+                                  blurRadius: 15,
+                                  spreadRadius: 1,
+                                )
+                              ]
+                            : [],
+                      ),
+                      child: Stack(
+                        children: [
+                          IgnorePointer(
+                            // 列表接管点击事件，禁用卡片内部点击
+                            ignoring: true, 
+                            child: PropertyCard(
+                              propertyData: data,
+                              propertyId: doc.id,
+                              showFavoriteButton: false, // 禁用卡片自带的收藏按钮，我们在外层覆盖一个
+                              margin: EdgeInsets.zero,
+                              heroTagPrefix: 'fav_list',
+                              onTap: () {},
+                            ),
                           ),
-                        ),
-                        if (_isSelectionMode)
-                          Positioned(
-                            top: 10, right: 10,
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              width: 30, height: 30,
-                              decoration: BoxDecoration(
-                                // 勾选框：实心青色，更加明显
-                                color: isSelected ? glowColor : Colors.black.withOpacity(0.4),
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white, width: 2),
+
+                          // 蒙版: 已出租
+                          if (isUnavailable && !_isSelectionMode)
+                             Positioned.fill(
+                              child: Container(
+                                decoration: BoxDecoration(color: Colors.black.withOpacity(0.6), borderRadius: BorderRadius.circular(20)),
+                                child: const Center(child: Text("RENTED OUT", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
                               ),
-                              child: isSelected 
-                                  ? const Icon(Icons.check, size: 18, color: Colors.black87) 
-                                  : null,
                             ),
-                          ),
-                        if (isUnavailable && !_isSelectionMode)
-                          Positioned.fill(
-                            child: Container(
-                              decoration: BoxDecoration(color: Colors.black.withOpacity(0.6), borderRadius: BorderRadius.circular(20)),
-                              child: const Center(child: Text("RENTED OUT", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+
+                          // 选中模式下的打钩图标
+                          if (_isSelectionMode)
+                            Positioned(
+                              top: 10,
+                              right: 10,
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 250),
+                                width: 30,
+                                height: 30,
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? glowColor
+                                      : Colors.black.withOpacity(0.4),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white, width: 2),
+                                ),
+                                child: isSelected
+                                    ? const Icon(Icons.check,
+                                        size: 18, color: Colors.black87)
+                                    : null,
+                              ),
                             ),
-                          ),
-                      ],
+                          
+                          // 非选中模式下的删除收藏按钮 (右上角)
+                          if (!_isSelectionMode)
+                            Positioned(
+                              top: 10, right: 10,
+                              child: GestureDetector(
+                                onTap: () => _handleRemoveFavorite(doc.id),
+                                child: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.3),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  // 实心星星表示已收藏，点击取消
+                                  child: const Icon(Icons.star, color: Colors.amber, size: 24),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                 );
               },
             ),
 
-          // ✅ 底部按钮：纯净白色毛玻璃
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOutBack,
-            bottom: _isSelectionMode ? 110 : -100, 
-            left: 40, right: 40,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(30),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15), // 提高一点透明度
-                    borderRadius: BorderRadius.circular(30),
-                    border: Border.all(color: Colors.white.withOpacity(0.3)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      )
-                    ]
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: _selectedIds.length >= 2 ? _navigateToCompare : null,
-                      borderRadius: BorderRadius.circular(30),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.compare_arrows, color: Colors.white),
-                            const SizedBox(width: 10),
-                            Text(
-                              _selectedIds.length < 2 
-                                  ? "Select 2 to Start" 
-                                  : "Start Comparison (${_selectedIds.length})",
-                              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        ),
+          // 3. 顶部悬浮毛玻璃 Header
+          _buildFloatingHeader(accentBlue),
+
+          // 4. 底部“Start Comparison”悬浮按钮
+          if (_isSelectionMode)
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 450),
+              curve: Curves.easeOutBack,
+              bottom: _selectedIds.length >= 2
+                  ? (20 + bottomSafe)
+                  : -160,
+              left: 30,
+              right: 30,
+              child: AnimatedScale(
+                scale: _selectedIds.length >= 2 ? 1 : 0.7,
+                duration: const Duration(milliseconds: 350),
+                curve: Curves.easeOutBack,
+                child: _buildGlassFloatingButton(accentBlue),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // --- 组件构建方法 ---
+
+  Widget _buildFloatingHeader(Color accentBlue) {
+    return Positioned(
+      top: 0, left: 0, right: 0,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(30),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(30),
+                  border: Border.all(color: Colors.white.withOpacity(0.3), width: 1),
+                ),
+                child: Row(
+                  children: [
+                    // 返回按钮 (如果是在Tab里可能不需要，如果是独立页面则需要)
+                    // GestureDetector(
+                    //   onTap: () => Navigator.pop(context),
+                    //   child: const Icon(Icons.arrow_back, color: Colors.white),
+                    // ),
+                    // const SizedBox(width: 12),
+                    
+                    Expanded(
+                      child: Text(
+                        _isSelectionMode
+                            ? "Selected (${_selectedIds.length})"
+                            : "My Favorites",
+                        style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                  ),
+
+                    // 排序按钮 (仅在非选择模式显示)
+                    if (!_isSelectionMode && _properties.isNotEmpty)
+                      GestureDetector(
+                        onTap: _showGlassSortMenu,
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          margin: const EdgeInsets.only(right: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.sort, color: Colors.white, size: 20),
+                        ),
+                      ),
+
+                    // 对比/取消按钮
+                    if (_properties.isNotEmpty)
+                      GestureDetector(
+                        onTap: _toggleSelectionMode,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: _isSelectionMode
+                                ? Colors.white.withOpacity(0.2)
+                                : accentBlue.withOpacity(0.8),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            _isSelectionMode ? "Cancel" : "Compare",
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
           ),
-        ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGlassFloatingButton(Color accentBlue) {
+    bool enabled = _selectedIds.length >= 2;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            color: Colors.white.withOpacity(0.17),
+            border: Border.all(color: Colors.white.withOpacity(0.35), width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: accentBlue.withOpacity(0.35),
+                blurRadius: 22,
+                spreadRadius: 1,
+                offset: const Offset(0, 10),
+              )
+            ],
+          ),
+          child: Material(
+             color: Colors.transparent,
+             child: InkWell(
+              borderRadius: BorderRadius.circular(22),
+              onTap: enabled ? _navigateToCompare : null,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 18),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.compare_arrows, color: enabled ? Colors.white : Colors.white54, size: 22),
+                    const SizedBox(width: 10),
+                    Text(
+                      "Start Comparison (${_selectedIds.length})",
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: enabled ? Colors.white : Colors.white54),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -424,14 +522,14 @@ class _FavoritesScreenState extends State<FavoritesScreen> with TickerProviderSt
               const SizedBox(height: 24),
               const Text("No Favorites Yet", style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
               const SizedBox(height: 12),
-              const Text("Save properties you like here.", textAlign: TextAlign.center, style: TextStyle(color: Colors.white70, fontSize: 16)),
+              const Text("Properties you save will appear here.", textAlign: TextAlign.center, style: TextStyle(color: Colors.white70, fontSize: 16)),
               const SizedBox(height: 32),
               ElevatedButton.icon(
                 onPressed: () {
-                  Navigator.push(context, MaterialPageRoute(builder: (context) => const SearchScreen()));
+                   Navigator.push(context, MaterialPageRoute(builder: (context) => const SearchScreen()));
                 },
                 icon: const Icon(Icons.search, color: Colors.white),
-                label: const Text("Start Exploring"),
+                label: const Text("Go Explore"),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF1D5DC7),
                   foregroundColor: Colors.white,
@@ -444,57 +542,6 @@ class _FavoritesScreenState extends State<FavoritesScreen> with TickerProviderSt
           ),
         ),
       ),
-    );
-  }
-}
-
-// ✅ 最终修正版容器：
-// 1. 外部 margin 20 (解决紧凑问题)
-// 2. 背景色透明 (解决变色问题)
-// 3. 只有边缘光晕 (解决花哨问题)
-class _GlowBorderContainer extends StatelessWidget {
-  final bool isSelected;
-  final Widget child;
-  final AnimationController animation;
-
-  const _GlowBorderContainer({required this.isSelected, required this.child, required this.animation});
-
-  @override
-  Widget build(BuildContext context) {
-    const Color glowColor = Color(0xFF00E5FF);
-
-    // 未选中：给予默认下边距 (20px)
-    if (!isSelected) return Container(margin: const EdgeInsets.only(bottom: 20), child: child);
-
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (context, _) {
-        return Container(
-          margin: const EdgeInsets.only(bottom: 20), // ✅ 统一的间距，解决布局紧凑
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            // ✅ 背景透明，防止卡片变色
-            color: Colors.transparent, 
-            
-            // 边框
-            border: Border.all(color: glowColor, width: 2),
-            
-            // 光晕
-            boxShadow: [
-              BoxShadow(
-                color: glowColor.withOpacity(0.3 + 0.2 * animation.value), 
-                blurRadius: 12,
-                spreadRadius: 0, // 不向内扩散
-              )
-            ],
-          ),
-          // 裁剪圆角，让边框贴合
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(18),
-            child: child,
-          ),
-        );
-      },
     );
   }
 }

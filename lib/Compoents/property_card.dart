@@ -1,7 +1,10 @@
 // lib/Compoents/property_card.dart
 import 'package:flutter/material.dart';
-import 'glass_card.dart'; // 导入我们已有的毛玻璃卡片
-import 'favorite_button.dart'; // 导入收藏按钮组件
+
+import 'favorite_button.dart';
+import 'glass_card.dart'; 
+
+
 
 /// 用于在 PropertyCard 内部显示 "3 🛏️" 的迷你标签
 class _MiniInfoChip extends StatelessWidget {
@@ -39,8 +42,11 @@ class PropertyCard extends StatelessWidget {
   final VoidCallback onTap;
   final bool showFavoriteButton;
   
-  // ✅ 新增 margin 参数，允许外部控制边距
+  // ✅ 1. 新增 margin 参数 (为了 Favorites 页面的流光边框)
   final EdgeInsetsGeometry? margin;
+  
+  // ✅ 2. 新增 heroTagPrefix 参数 (为了解决 Hero 动画冲突)
+  final String heroTagPrefix;
 
   const PropertyCard({
     super.key,
@@ -48,7 +54,8 @@ class PropertyCard extends StatelessWidget {
     required this.propertyId,
     required this.onTap,
     this.showFavoriteButton = true,
-    this.margin, // 接收参数
+    this.margin,
+    this.heroTagPrefix = 'global', // ✅ 默认为 global
   });
 
   @override
@@ -67,7 +74,7 @@ class PropertyCard extends StatelessWidget {
     final String size = propertyData['size_sqft'] ?? 'N/A';
 
     return Padding(
-      // ✅ 如果外部没传 margin，默认用 bottom: 16；如果传了(比如 zero)就用传进来的
+      // 使用传入的 margin，如果没有则默认 bottom: 16
       padding: margin ?? const EdgeInsets.only(bottom: 16.0),
       child: GestureDetector(
         onTap: onTap,
@@ -81,7 +88,8 @@ class PropertyCard extends StatelessWidget {
                   children: [
                     // 1.1 左侧缩略图
                     Hero(
-                      tag: propertyId,
+                      // ✅ 3. 关键：组合前缀和ID，确保标签唯一
+                      tag: "${heroTagPrefix}_$propertyId",
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(12.0),
                         child: Container(
