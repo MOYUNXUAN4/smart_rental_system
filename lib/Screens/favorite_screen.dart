@@ -12,6 +12,10 @@ import 'package:smart_rental_system/Screens/search_screen.dart';
 import 'package:smart_rental_system/Screens/compare_screen.dart';
 
 
+// ✅ Import the new GlowingWrapper
+import '../Compoents/glowing_wrapper.dart'; 
+
+
 enum SortType { newest, priceLowToHigh, priceHighToLow }
 
 class FavoritesScreen extends StatefulWidget {
@@ -102,7 +106,11 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         } else {
           if (_selectedIds.length >= 3) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Compare up to 3 properties"), backgroundColor: Colors.orange),
+              const SnackBar(
+                content: Text("You can compare up to 3 properties."),
+                backgroundColor: Color(0xFF1D5DC7),
+                duration: Duration(seconds: 1),
+              ),
             );
             return;
           }
@@ -113,7 +121,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       if (!isUnavailable) {
         Navigator.push(context, MaterialPageRoute(builder: (context) => PropertyDetailScreen(propertyId: id)));
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Property unavailable")));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("This property is no longer available.")));
       }
     }
   }
@@ -122,20 +130,23 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     if (_selectedIds.length < 2) return;
 
     try {
-      // 1. 安全地提取数据
       final selectedDocs = _properties.where((doc) => _selectedIds.contains(doc.id)).toList();
       
-      // 2. 转换为纯 Map List，防止传递 DocumentSnapshot 导致的潜在序列化问题
       final List<Map<String, dynamic>> propertiesData = selectedDocs.map((doc) {
         var data = doc.data() as Map<String, dynamic>;
-        // 确保关键字段存在，防止下游崩溃
+        // Ensure keys exist to prevent crashes
         data['price'] = data['price'] ?? 0;
         data['size_sqft'] = data['size_sqft'] ?? '0';
         data['bedrooms'] = data['bedrooms'] ?? 0;
+        data['bathrooms'] = data['bathrooms'] ?? 0;
+        data['parking'] = data['parking'] ?? 0;
+        data['furnishing'] = data['furnishing'] ?? 'N/A';
+        data['features'] = data['features'] ?? [];
+        data['communityName'] = data['communityName'] ?? 'Unknown';
+        data['imageUrls'] = data['imageUrls'];
         return data;
       }).toList();
 
-      // 3. 跳转
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -143,16 +154,67 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         ),
       );
     } catch (e) {
-      print("Error navigating to compare: $e");
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Error starting comparison")));
+      print("Error navigating: $e");
     }
   }
 
   void _showGlassSortMenu() {
-    // ... (保持你原有的排序菜单代码)
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(16),
+          child: GlassCard(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
+                  child: Text("Sort By", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
+                const Divider(color: Colors.white24),
+                _buildSortOption("Date Added (Newest)", SortType.newest),
+                _buildSortOption("Price (Low to High)", SortType.priceLowToHigh),
+                _buildSortOption("Price (High to Low)", SortType.priceHighToLow),
+                const SizedBox(height: 10),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
-  // ✅ 简单的白色毛玻璃按钮 (AppBar)
+  Widget _buildSortOption(String label, SortType type) {
+    final bool isSelected = _currentSort == type;
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _currentSort = type;
+          _sortDocs(_properties, _properties.map((e) => e.id).toList());
+        });
+        Navigator.pop(context);
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white.withOpacity(0.1) : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Text(label, style: TextStyle(color: isSelected ? const Color(0xFF1D5DC7) : Colors.white70, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, fontSize: 16)),
+            const Spacer(),
+            if (isSelected) const Icon(Icons.check_circle, color: Color(0xFF1D5DC7), size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildCompareToggleButton() {
     return Center(
       child: GestureDetector(
@@ -191,18 +253,22 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   Widget build(BuildContext context) {
     const Color bgDark = Color(0xFF153a44);
     const Color accentBlue = Color(0xFF1D5DC7);
+    const Color glowColor = Color(0xFF00E5FF); 
 
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text(_isSelectionMode ? "Selected (${_selectedIds.length})" : "My Favorites", 
-          style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+        title: Text(
+          _isSelectionMode ? "Selected (${_selectedIds.length})" : "My Favorites",
+          style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           if (_properties.isNotEmpty) _buildCompareToggleButton(),
-          if (!_isSelectionMode) IconButton(icon: const Icon(Icons.sort, color: Colors.white), onPressed: _showGlassSortMenu),
+          if (!_isSelectionMode && _properties.isNotEmpty)
+            IconButton(icon: const Icon(Icons.sort, color: Colors.white), onPressed: _showGlassSortMenu),
           const SizedBox(width: 12),
         ],
       ),
@@ -216,10 +282,11 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
               ),
             ),
           ),
+
           if (_isLoading)
             const Center(child: CircularProgressIndicator(color: Colors.white))
           else if (_properties.isEmpty)
-            _buildEmptyState() // 请确保你有这个方法
+            _buildEmptyState()
           else
             ListView.builder(
               padding: const EdgeInsets.only(top: 100, left: 16, right: 16, bottom: 140),
@@ -232,8 +299,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
                 return GestureDetector(
                   onTap: () => _handleItemTap(doc.id, isUnavailable),
-                  // ✅ 使用新的清爽版发光容器
-                  child: _GlowBorderContainer(
+                  
+                  // ✅ 关键修改：使用 GlowingWrapper 包裹
+                  child: GlowingWrapper(
                     isSelected: _isSelectionMode && isSelected,
                     child: Stack(
                       children: [
@@ -243,8 +311,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                             propertyData: data,
                             propertyId: doc.id,
                             showFavoriteButton: !_isSelectionMode,
-                            // ✅ 关键：去掉卡片自带边距，让发光框紧贴
-                            margin: EdgeInsets.zero, 
+                            margin: EdgeInsets.zero, // Needed to fit inside the wrapper perfectly
                             onTap: () {},
                           ),
                         ),
@@ -255,17 +322,19 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                               duration: const Duration(milliseconds: 200),
                               width: 30, height: 30,
                               decoration: BoxDecoration(
-                                color: isSelected ? accentBlue : Colors.black.withOpacity(0.4),
+                                color: isSelected ? glowColor : Colors.black.withOpacity(0.3),
                                 shape: BoxShape.circle,
                                 border: Border.all(color: Colors.white, width: 2),
                               ),
-                              child: isSelected ? const Icon(Icons.check, size: 18, color: Colors.white) : null,
+                              child: isSelected 
+                                  ? const Icon(Icons.check, size: 18, color: Colors.black87) 
+                                  : null,
                             ),
                           ),
                         if (isUnavailable && !_isSelectionMode)
                           Positioned.fill(
                             child: Container(
-                              decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(12)),
+                              decoration: BoxDecoration(color: Colors.black.withOpacity(0.6), borderRadius: BorderRadius.circular(20)),
                               child: const Center(child: Text("RENTED OUT", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
                             ),
                           ),
@@ -276,11 +345,11 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
               },
             ),
 
-          // ✅ 底部按钮：白色毛玻璃风格，纯净
+          // 底部按钮：白色毛玻璃风格
           AnimatedPositioned(
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeInOutBack,
-            bottom: _isSelectionMode ? 110 : -100,
+            bottom: _isSelectionMode ? 110 : -100, 
             left: 40, right: 40,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(30),
@@ -304,7 +373,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                             const Icon(Icons.compare_arrows, color: Colors.white),
                             const SizedBox(width: 10),
                             Text(
-                              _selectedIds.length < 2 ? "Select 2 to Start" : "Start Comparison (${_selectedIds.length})",
+                              _selectedIds.length < 2 
+                                  ? "Select 2 to Start" 
+                                  : "Start Comparison (${_selectedIds.length})",
                               style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                             ),
                           ],
@@ -320,41 +391,39 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       ),
     );
   }
-  Widget _buildEmptyState() { return Container(); } // 你的空状态
-}
 
-// ✅ 全新设计的容器：只发光，不花哨
-class _GlowBorderContainer extends StatelessWidget {
-  final bool isSelected;
-  final Widget child;
-
-  const _GlowBorderContainer({required this.isSelected, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    // 1. 未选中：保持原有间距，无边框
-    if (!isSelected) return Container(margin: const EdgeInsets.only(bottom: 16), child: child);
-
-    // 2. 选中：淡蓝色发光边框，紧贴
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        // 必须匹配 PropertyCard 的圆角 (通常是 12 或 20)
-        // 这里设为 20 加上边框宽度
-        borderRadius: BorderRadius.circular(20), 
-        border: Border.all(color: Colors.cyanAccent, width: 2), // 简单的淡蓝色边
-        boxShadow: [
-          BoxShadow(
-            color: Colors.cyanAccent.withOpacity(0.4), // 柔和的淡蓝光晕
-            blurRadius: 12,
-            spreadRadius: 1,
-          )
-        ],
-      ),
-      // ClipRRect 确保内容不溢出圆角
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: child,
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: GlassCard(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.favorite_border, size: 80, color: Colors.white.withOpacity(0.5)),
+              const SizedBox(height: 24),
+              const Text("No Favorites Yet", style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              const Text("Save properties you like here.", textAlign: TextAlign.center, style: TextStyle(color: Colors.white70, fontSize: 16)),
+              const SizedBox(height: 32),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(context, MaterialPageRoute(builder: (context) => const SearchScreen()));
+                },
+                icon: const Icon(Icons.search, color: Colors.white),
+                label: const Text("Start Exploring"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1D5DC7),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                  elevation: 5,
+                ),
+              )
+            ],
+          ),
+        ),
       ),
     );
   }
