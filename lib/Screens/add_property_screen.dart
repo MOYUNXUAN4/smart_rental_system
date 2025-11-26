@@ -1,22 +1,22 @@
 import 'dart:io';
-import 'dart:ui';
+import 'dart:ui'; // 虽然这里不再定义GlassCard，但为了防止其他UI依赖，保留引用
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:intl/intl.dart';
 import 'package:open_file/open_file.dart';
+import 'package:collection/collection.dart'; 
 
-// ✅ 1. 【已修复】: 导入 'collection' 包以使用 'firstWhereOrNull'
-import 'package:collection/collection.dart';
-
-import '../Compoents/contract_generator.dart'; 
+// ✅ 引入自定义组件 (注意路径拼写匹配你的文件夹 'Compoents')
+import '../Compoents/add_property_widgets.dart'; 
+import '../Compoents/panorama_widget.dart';     // 360 组件
+import '../Compoents/contract_generator.dart';
+import '../Compoents/glass_card.dart';          // 👈 必须引入这个，删除底部的本地定义
 
 class AddPropertyScreen extends StatefulWidget {
-  // ✅ 2. 接收可选的 propertyId
-  final String? propertyId;
+  final String? propertyId; // 传入 ID 则为编辑模式
 
   const AddPropertyScreen({super.key, this.propertyId});
 
@@ -24,78 +24,91 @@ class AddPropertyScreen extends StatefulWidget {
   State<AddPropertyScreen> createState() => _AddPropertyScreenState();
 }
 
-enum ContractOption { none, upload, generate }
-
 class _AddPropertyScreenState extends State<AddPropertyScreen> {
-  // (所有 Controller 和状态变量保持不变)
+  // --- 核心状态变量 ---
   final _formKey = GlobalKey<FormState>();
+  
+  // 文本控制器
   final _priceController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _sizeController = TextEditingController();
   final _floorController = TextEditingController();
   final _unitController = TextEditingController();
   
+  // UI 状态
   bool _isLoading = false;
-  List<XFile> _selectedImages = [];
+  bool _isCommunityListLoading = true;
+  
+  // 数据状态
+  List<Map<String, dynamic>> _communityList = [];
+  Map<String, dynamic>? _selectedCommunity;
+  Map<String, dynamic> _existingPropertyData = {}; 
+  
+  // 房源字段
+  List<XFile> _selectedImages = []; 
+  
+  // ✅ 360 全景图相关字段
+  XFile? _selected360Image; 
+  String? _existing360Url; 
+
+  // 合同相关
   File? _selectedContract;
   String? _selectedContractName;
+  ContractOption _contractOption = ContractOption.none;
+  String _generatedContractLanguage = 'zh';
+  
+  // 其他属性
   DateTime? _selectedDate;
   int _bedrooms = 1;
   int _bathrooms = 1;
   int _parking = 0;
   int _airConditioners = 0;
+  
   String _selectedFurnishing = 'Unfurnished';
+  final List<String> _furnishingOptions = ['Fully Furnished', 'Half Furnished', 'Unfurnished'];
+  
   Set<String> _selectedFeatures = {};
   Set<String> _selectedFacilities = {};
-  ContractOption _contractOption = ContractOption.none;
-  String _generatedContractLanguage = 'zh'; 
-  String _landlordName = "Loading..."; 
   
-  // ✅ 3. 【修改】: 更改这两个状态的类型
-  List<Map<String, dynamic>> _communityList = []; // 👈 不再是 List<String>
-  Map<String, dynamic>? _selectedCommunity;      // 👈 不再是 String?
-  bool _isCommunityListLoading = true;
-  
-  // ✅ 4. 添加 "编辑模式" 检查器和旧数据持有者
+  String _landlordName = "Loading...";
+
   bool get _isEditMode => widget.propertyId != null;
-  Map<String, dynamic> _existingPropertyData = {}; // 用于存储旧数据 (例如图片URL)
 
-
-  final List<String> _furnishingOptions = [
-    'Fully Furnished', 'Half Furnished', 'Unfurnished'
-  ];
   final Map<String, IconData> _featureOptions = {
     'Air Conditioner': Icons.ac_unit, 'Refrigerator': Icons.kitchen,
     'Washing Machine': Icons.local_laundry_service, 'Wifi': Icons.wifi,
+    'Balcony': Icons.balcony, 'Smart Lock': Icons.lock,
   };
   final Map<String, IconData> _facilityOptions = {
     '24-hour Security': Icons.security, 'Free Indoor Gym': Icons.fitness_center,
     'Free Outdoor Pool': Icons.pool, 'Parking Area': Icons.local_parking,
   };
 
+  // --- 初始化与销毁 ---
   @override
   void initState() {
     super.initState();
-    _fetchLandlordName(); 
-    // ✅ 5. 在获取列表后，再尝试加载数据
+    _fetchLandlordName();
     _fetchCommunities().then((_) {
       if (_isEditMode) {
         _loadPropertyData();
       }
-    }); 
+    });
   }
-  
+
   @override
   void dispose() {
-    _floorController.dispose(); 
-    _unitController.dispose(); 
+    _floorController.dispose();
+    _unitController.dispose();
     _priceController.dispose();
     _descriptionController.dispose();
     _sizeController.dispose();
     super.dispose();
   }
 
-  Future<void> _fetchLandlordName() async { 
+  // --- 数据获取逻辑 ---
+
+  Future<void> _fetchLandlordName() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
@@ -104,22 +117,18 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
           setState(() => _landlordName = doc.data()?['name'] ?? 'Landlord');
         }
       }
-    } catch (e) {
-      if (mounted) setState(() => _landlordName = 'Landlord');
-    }
+    } catch (_) {}
   }
 
-  // ✅ 6. 【修改】: _fetchCommunities 现在获取完整的文档数据
-  Future<void> _fetchCommunities() async { 
+  Future<void> _fetchCommunities() async {
     try {
       final snapshot = await FirebaseFirestore.instance.collection('communities').get();
-      // 将每个文档的数据 (Map) 存储到列表中
       final communities = snapshot.docs.map((doc) {
         var data = doc.data();
-        data['id'] = doc.id; 
+        data['id'] = doc.id;
         return data;
       }).toList();
-      
+
       if (mounted) {
         setState(() {
           _communityList = communities;
@@ -127,29 +136,21 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         });
       }
     } catch (e) {
-      print("Error fetching communities: $e");
       if (mounted) {
         setState(() => _isCommunityListLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load community list: $e')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to load communities: $e')));
       }
     }
   }
 
-  // ✅ 7. 【新函数】: 加载已有房源数据 (已修复 Bug)
   Future<void> _loadPropertyData() async {
     if (!_isEditMode) return;
-    setState(() => _isLoading = true); 
+    setState(() => _isLoading = true);
     try {
-      final doc = await FirebaseFirestore.instance
-          .collection('properties')
-          .doc(widget.propertyId!)
-          .get();
-
+      final doc = await FirebaseFirestore.instance.collection('properties').doc(widget.propertyId!).get();
       if (doc.exists && mounted) {
         final data = doc.data() as Map<String, dynamic>;
-        _existingPropertyData = data; 
+        _existingPropertyData = data;
 
         _priceController.text = (data['price'] ?? 0.0).toStringAsFixed(0);
         _descriptionController.text = data['description'] ?? '';
@@ -158,13 +159,12 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         _unitController.text = data['unitNumber'] ?? '';
 
         setState(() {
+          // 回填社区
           if (_communityList.isNotEmpty) {
-             // 👈 【已修复】: 使用 firstWhereOrNull 替代 firstWhere
-             _selectedCommunity = _communityList.firstWhereOrNull( 
+            _selectedCommunity = _communityList.firstWhereOrNull(
               (c) => c['name'] == data['communityName'],
             );
           }
-          
           _bedrooms = data['bedrooms'] ?? 1;
           _bathrooms = data['bathrooms'] ?? 1;
           _parking = data['parking'] ?? 0;
@@ -173,16 +173,23 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
           _selectedFeatures = Set<String>.from(data['features'] ?? []);
           _selectedFacilities = Set<String>.from(data['facilities'] ?? []);
           _selectedDate = (data['availableDate'] as Timestamp?)?.toDate();
+          
+          // 回填 360 图片
+          if (data['360ImageUrl'] != null) {
+            _existing360Url = data['360ImageUrl'];
+          }
         });
       }
     } catch (e) {
-      print("Error loading property data: $e");
+      print("Error loading property: $e");
     } finally {
-      if (mounted) setState(() => _isLoading = false); 
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _pickImages() async { 
+  // --- 图片与文件选择 ---
+
+  Future<void> _pickImages() async {
     final ImagePicker picker = ImagePicker();
     final List<XFile> images = await picker.pickMultiImage(imageQuality: 70, maxWidth: 1024);
     if (images.isNotEmpty) {
@@ -190,10 +197,73 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     }
   }
 
-  Future<void> _pickContract() async { 
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom, allowedExtensions: ['pdf']);
+  // ✅ 360 图片选择 (支持拍照和相册)
+  Future<void> _pick360Image() async {
+    final ImagePicker picker = ImagePicker();
 
+    // 弹出底部菜单
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF295a68),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 10),
+              Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white30, borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 20),
+              
+              // 选项 1: 拍照
+              ListTile(
+                leading: const Icon(Icons.camera_alt, color: Colors.white),
+                title: const Text('Take a Photo', style: TextStyle(color: Colors.white)),
+                subtitle: const Text('Please switch to "Panorama" mode manually', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                onTap: () async {
+                  Navigator.pop(context);
+                  _processImagePick(picker, ImageSource.camera);
+                },
+              ),
+              
+              // 选项 2: 相册
+              ListTile(
+                leading: const Icon(Icons.photo_library, color: Colors.white),
+                title: const Text('Choose from Gallery', style: TextStyle(color: Colors.white)),
+                onTap: () async {
+                  Navigator.pop(context);
+                  _processImagePick(picker, ImageSource.gallery);
+                },
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // 辅助选图处理
+  Future<void> _processImagePick(ImagePicker picker, ImageSource source) async {
+    try {
+      if (source == ImageSource.camera) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('📸 Opening Camera... Use Panorama mode!'), duration: Duration(seconds: 3)),
+        );
+      }
+      final XFile? image = await picker.pickImage(source: source, imageQuality: 85);
+      if (image != null) {
+        setState(() {
+          _selected360Image = image;
+        });
+      }
+    } catch (e) {
+      print("Error picking 360 image: $e");
+    }
+  }
+
+  Future<void> _pickContract() async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['pdf']);
     if (result != null) {
       setState(() {
         _selectedContract = File(result.files.single.path!);
@@ -202,18 +272,16 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       });
     }
   }
-  
-  // ✅ 8. 【修改】: _generateContract 现在从 Map 中获取小区名
-  Future<void> _generateContract() async { 
+
+  Future<void> _generateContract() async {
     if (_selectedCommunity == null) {
        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a community first.'))); return;
     }
     if (!_formKey.currentState!.validate()) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill in required fields (Price, etc).'))); return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill in required fields first.'))); return;
     }
     
     setState(() => _isLoading = true);
-    
     try {
       final String communityName = _selectedCommunity!['name'] as String;
       final String fullAddress = "${_unitController.text.trim()}, Floor ${_floorController.text.trim()}, $communityName";
@@ -225,283 +293,229 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         startDate: "____/____/____", endDate: "____/____/____",
         language: _generatedContractLanguage,
       );
-      final result = await OpenFile.open(generatedFile.path);
-      if (result.type != ResultType.done) throw Exception('Could not open file for review: ${result.message}');
+      
+      await OpenFile.open(generatedFile.path);
 
       if (mounted) {
         final bool? didConfirm = await showDialog<bool>(
           context: context, barrierDismissible: false,
-          builder: (BuildContext dialogContext) {
-             return AlertDialog(
-              title: const Text('Confirm Contract'),
-              content: const Text('Do you want to use this generated contract for your property listing?'),
-              actions: <Widget>[
-                TextButton(child: const Text('Cancel'), onPressed: () => Navigator.of(dialogContext).pop(false)),
-                ElevatedButton(child: const Text('Confirm'), onPressed: () => Navigator.of(dialogContext).pop(true)),
-              ],
-            );
-          }
+          builder: (ctx) => AlertDialog(
+            title: const Text('Confirm Contract'),
+            content: const Text('Use this generated contract?'),
+            actions: [
+              TextButton(child: const Text('Cancel'), onPressed: () => Navigator.pop(ctx, false)),
+              ElevatedButton(child: const Text('Confirm'), onPressed: () => Navigator.pop(ctx, true)),
+            ],
+          )
         );
         if (didConfirm == true && mounted) {
           setState(() {
             _selectedContract = generatedFile;
             _selectedContractName = "Generated_Contract_${DateTime.now().millisecondsSinceEpoch}.pdf";
           });
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ Contract staged for upload: $_selectedContractName')));
         }
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ Contract generation failed: $e')));
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Generation failed: $e')));
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if(mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _selectDate(BuildContext context) async { 
-    final DateTime? picked = await showDatePicker(
-      context: context, initialDate: _selectedDate ?? DateTime.now(),
-      firstDate: DateTime.now(), lastDate: DateTime(2101),
-    );
-    if (picked != null && picked != _selectedDate) {
-      setState(() { _selectedDate = picked; });
-    }
-  }
+  // --- 提交/更新/删除逻辑 ---
 
-  // ✅ 9. 修改 _showConfirmDialog 以支持两种模式
   Future<void> _showConfirmDialog() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_selectedCommunity == null || _selectedDate == null) {
+       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please check Community and Date fields.'))); return;
+    }
+    // 检查是否有图
+    bool hasImages = _selectedImages.isNotEmpty;
+    if (_isEditMode && (_existingPropertyData['imageUrls'] as List?)?.isNotEmpty == true) {
+      hasImages = true; 
+    }
+    if (!hasImages) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please add at least one property image.'))); return;
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(_isEditMode ? "Confirm Changes" : "Confirm Upload"), 
-        content: Text("Are you sure you want to ${_isEditMode ? 'save changes' : 'upload this property'}?"), 
+        title: Text(_isEditMode ? "Confirm Changes" : "Confirm Upload"),
+        content: Text("Are you sure you want to ${_isEditMode ? 'save changes' : 'upload this property'}?"),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
           ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text("Confirm")),
         ],
       ),
     );
+
     if (confirmed == true) {
-      // ✅ 10. 根据模式调用不同的保存函数
-      if (_isEditMode) {
-        await _updateProperty();
-      } else {
-        await _addProperty();
-      }
+      _isEditMode ? await _updateProperty() : await _addProperty();
     }
   }
 
-  // ✅ 11. 将 _submitProperty 重命名为 _addProperty (用于添加新房源)
-  Future<void> _addProperty() async { 
-    if (!_formKey.currentState!.validate()) return;
-    if (_selectedCommunity == null) { 
-       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a community.'))); return;
-    }
-    if (_selectedImages.isEmpty) { 
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select at least one property image.'))); return;
-    }
-    if (_selectedDate == null) { 
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select the available date.'))); return;
-    }
-
-    if (!mounted) return;
-    setState(() => _isLoading = true);
-
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) throw Exception("User not logged in");
-
-      final imageUrls = await _uploadImages(_selectedImages);
-      final contractUrl = _selectedContract != null ? await _uploadContract(_selectedContract!) : null;
-
-      final String communityName = _selectedCommunity!['name'] as String;
-      final double latitude = (_selectedCommunity!['latitude'] as num?)?.toDouble() ?? 0.0;
-      final double longitude = (_selectedCommunity!['longitude'] as num?)?.toDouble() ?? 0.0;
-
-      await FirebaseFirestore.instance.collection('properties').add({
-        'landlordUid': user.uid, 
-        'communityName': communityName, 
-        'latitude': latitude,           
-        'longitude': longitude,         
-        'floor': _floorController.text.trim(), 
-        'unitNumber': _unitController.text.trim(),
-        'price': double.tryParse(_priceController.text.trim()) ?? 0.0,
-        'description': _descriptionController.text.trim(), 
-        'size_sqft': _sizeController.text.trim(),
-        'bedrooms': _bedrooms, 'bathrooms': _bathrooms, 'parking': _parking,
-        'airConditioners': _airConditioners, 'furnishing': _selectedFurnishing,
-        'availableDate': Timestamp.fromDate(_selectedDate!),
-        'features': _selectedFeatures.toList(), 
-        'facilities': _selectedFacilities.toList(),
-        'imageUrls': imageUrls, 'contractUrl': contractUrl, 'createdAt': Timestamp.now(),
-      });
-
-      if (mounted) {
-        setState(() => _isLoading = false); 
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Property Added Successfully!')));
-        Navigator.of(context).pop(); 
-      }
-    } catch (e) {
-      print("添加房产失败: $e");
-      if (mounted) {
-        setState(() => _isLoading = false); 
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ Failed to add property: $e')));
-      }
-    }
-  }
-  
-  // ✅ 12. 【新函数】: 用于更新现有房源
-  Future<void> _updateProperty() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (_selectedCommunity == null) { /* ... */ }
-    if (_selectedDate == null) { /* ... */ }
-
-    if (!mounted) return;
-    setState(() => _isLoading = true);
-
-    try {
-      final String communityName = _selectedCommunity!['name'] as String;
-      final double latitude = (_selectedCommunity!['latitude'] as num?)?.toDouble() ?? 0.0;
-      final double longitude = (_selectedCommunity!['longitude'] as num?)?.toDouble() ?? 0.0;
-      
-      Map<String, dynamic> updateData = {
-        'communityName': communityName, 
-        'latitude': latitude,           
-        'longitude': longitude,         
-        'floor': _floorController.text.trim(), 
-        'unitNumber': _unitController.text.trim(),
-        'price': double.tryParse(_priceController.text.trim()) ?? 0.0,
-        'description': _descriptionController.text.trim(), 
-        'size_sqft': _sizeController.text.trim(),
-        'bedrooms': _bedrooms, 'bathrooms': _bathrooms, 'parking': _parking,
-        'airConditioners': _airConditioners, 'furnishing': _selectedFurnishing,
-        'availableDate': Timestamp.fromDate(_selectedDate!),
-        'features': _selectedFeatures.toList(), 
-        'facilities': _selectedFacilities.toList(),
-      };
-
-      if (_selectedImages.isNotEmpty) {
-        final imageUrls = await _uploadImages(_selectedImages);
-        updateData['imageUrls'] = imageUrls;
-      }
-      if (_selectedContract != null) {
-        final contractUrl = await _uploadContract(_selectedContract!);
-        updateData['contractUrl'] = contractUrl;
-      }
-
-      await FirebaseFirestore.instance
-          .collection('properties')
-          .doc(widget.propertyId!)
-          .update(updateData);
-
-      if (mounted) {
-        setState(() => _isLoading = false); 
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Property Updated Successfully!')));
-        Navigator.of(context).pop(); 
-      }
-    } catch (e) {
-      print("更新房产失败: $e");
-      if (mounted) {
-        setState(() => _isLoading = false); 
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ Failed to update property: $e')));
-      }
-    }
-  }
-
-  // ✅ 13. 【新函数】: 删除房源
-  Future<void> _deleteProperty() async {
-    final bool? didConfirm = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Delete Property'),
-          content: const Text('Are you sure you want to permanently delete this property? This action cannot be undone.'),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('Cancel'),
-              onPressed: () => Navigator.of(context).pop(false),
-            ),
-            TextButton( 
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
-              child: const Text('Delete'),
-              onPressed: () => Navigator.of(context).pop(true),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (didConfirm != true) return; 
-
-    if (!mounted) return;
-    setState(() => _isLoading = true);
-
-    try {
-      final storage = FirebaseStorage.instance;
-      
-      if (_existingPropertyData['contractUrl'] != null && _existingPropertyData['contractUrl'].isNotEmpty) {
-        try {
-          await storage.refFromURL(_existingPropertyData['contractUrl']).delete();
-        } catch (e) {
-          print("Note: Failed to delete old contract, it might not exist: $e");
-        }
-      }
-
-      if (_existingPropertyData['imageUrls'] != null) {
-        final List<String> oldUrls = List<String>.from(_existingPropertyData['imageUrls']);
-        for (final url in oldUrls) {
-          if (url.isNotEmpty) {
-             try {
-              await storage.refFromURL(url).delete();
-            } catch (e) {
-              print("Note: Failed to delete old image, it might not exist: $e");
-            }
-          }
-        }
-      }
-
-      await FirebaseFirestore.instance
-          .collection('properties')
-          .doc(widget.propertyId!)
-          .delete();
-          
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Property Deleted Successfully!')));
-        Navigator.of(context).pop(); 
-      }
-
-    } catch (e) {
-      print("删除房产失败: $e");
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ Failed to delete property: $e')));
-      }
-    }
-  }
-
-
-  Future<List<String>> _uploadImages(List<XFile> images) async { 
+  Future<List<String>> _uploadImages(List<XFile> images) async {
     final storage = FirebaseStorage.instance;
     List<String> urls = [];
     for (final img in images) {
-      final file = File(img.path);
       final fileName = 'property_images/${DateTime.now().millisecondsSinceEpoch}_${img.name}';
       final ref = storage.ref().child(fileName);
-      await ref.putFile(file);
-      final url = await ref.getDownloadURL();
-      urls.add(url);
+      await ref.putFile(File(img.path));
+      urls.add(await ref.getDownloadURL());
     }
     return urls;
   }
 
-  Future<String> _uploadContract(File contract) async { 
-    final storage = FirebaseStorage.instance;
+  Future<String> _uploadContract(File contract) async {
     final fileName = 'contracts/${DateTime.now().millisecondsSinceEpoch}_${_selectedContractName ?? "contract.pdf"}';
-    final ref = storage.ref().child(fileName);
+    final ref = FirebaseStorage.instance.ref().child(fileName);
     await ref.putFile(contract);
     return await ref.getDownloadURL();
   }
 
+  Future<void> _addProperty() async {
+    setState(() => _isLoading = true);
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw Exception("User not logged in");
+
+      // 上传各种文件
+      final imageUrls = await _uploadImages(_selectedImages);
+      final contractUrl = _selectedContract != null ? await _uploadContract(_selectedContract!) : null;
+      
+      String? url360;
+      if (_selected360Image != null) {
+        final ref = FirebaseStorage.instance.ref().child('properties_360/${DateTime.now().millisecondsSinceEpoch}_pano.jpg');
+        await ref.putFile(File(_selected360Image!.path));
+        url360 = await ref.getDownloadURL();
+      }
+
+      await FirebaseFirestore.instance.collection('properties').add({
+        'landlordUid': user.uid,
+        'communityName': _selectedCommunity!['name'],
+        'latitude': (_selectedCommunity!['latitude'] as num?)?.toDouble() ?? 0.0,
+        'longitude': (_selectedCommunity!['longitude'] as num?)?.toDouble() ?? 0.0,
+        'floor': _floorController.text.trim(),
+        'unitNumber': _unitController.text.trim(),
+        'price': double.tryParse(_priceController.text.trim()) ?? 0.0,
+        'description': _descriptionController.text.trim(),
+        'size_sqft': _sizeController.text.trim(),
+        'bedrooms': _bedrooms, 'bathrooms': _bathrooms, 'parking': _parking,
+        'airConditioners': _airConditioners, 'furnishing': _selectedFurnishing,
+        'availableDate': Timestamp.fromDate(_selectedDate!),
+        'features': _selectedFeatures.toList(),
+        'facilities': _selectedFacilities.toList(),
+        'imageUrls': imageUrls,
+        'contractUrl': contractUrl,
+        '360ImageUrl': url360, 
+        'createdAt': Timestamp.now(),
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Property Added Successfully!')));
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+    } finally {
+      if(mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _updateProperty() async {
+    setState(() => _isLoading = true);
+    try {
+      Map<String, dynamic> updateData = {
+        'communityName': _selectedCommunity!['name'],
+        'latitude': (_selectedCommunity!['latitude'] as num?)?.toDouble() ?? 0.0,
+        'longitude': (_selectedCommunity!['longitude'] as num?)?.toDouble() ?? 0.0,
+        'floor': _floorController.text.trim(),
+        'unitNumber': _unitController.text.trim(),
+        'price': double.tryParse(_priceController.text.trim()) ?? 0.0,
+        'description': _descriptionController.text.trim(),
+        'size_sqft': _sizeController.text.trim(),
+        'bedrooms': _bedrooms, 'bathrooms': _bathrooms, 'parking': _parking,
+        'airConditioners': _airConditioners, 'furnishing': _selectedFurnishing,
+        'availableDate': Timestamp.fromDate(_selectedDate!),
+        'features': _selectedFeatures.toList(),
+        'facilities': _selectedFacilities.toList(),
+      };
+
+      if (_selectedImages.isNotEmpty) {
+        updateData['imageUrls'] = await _uploadImages(_selectedImages);
+      }
+      if (_selectedContract != null) {
+        updateData['contractUrl'] = await _uploadContract(_selectedContract!);
+      }
+      
+      // 更新 360 图片
+      if (_selected360Image != null) {
+        final ref = FirebaseStorage.instance.ref().child('properties_360/${DateTime.now().millisecondsSinceEpoch}_pano.jpg');
+        await ref.putFile(File(_selected360Image!.path));
+        updateData['360ImageUrl'] = await ref.getDownloadURL();
+      } else if (_existing360Url == null) {
+        updateData['360ImageUrl'] = FieldValue.delete();
+      }
+
+      await FirebaseFirestore.instance.collection('properties').doc(widget.propertyId!).update(updateData);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Property Updated!')));
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+    } finally {
+      if(mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _deleteProperty() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Property'),
+        content: const Text('Permanently delete this property? This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), style: TextButton.styleFrom(foregroundColor: Colors.red), child: const Text('Delete')),
+        ],
+      )
+    );
+
+    if (confirm != true) return;
+    setState(() => _isLoading = true);
+    
+    try {
+      final storage = FirebaseStorage.instance;
+      // 删旧文件
+      if (_existingPropertyData['contractUrl'] != null) {
+        try { await storage.refFromURL(_existingPropertyData['contractUrl']).delete(); } catch (_) {}
+      }
+      if (_existingPropertyData['imageUrls'] != null) {
+        for (final url in List<String>.from(_existingPropertyData['imageUrls'])) {
+          try { await storage.refFromURL(url).delete(); } catch (_) {}
+        }
+      }
+      if (_existingPropertyData['360ImageUrl'] != null) {
+        try { await storage.refFromURL(_existingPropertyData['360ImageUrl']).delete(); } catch (_) {}
+      }
+      
+      await FirebaseFirestore.instance.collection('properties').doc(widget.propertyId!).delete();
+      
+      if(mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Property Deleted.')));
+        Navigator.pop(context);
+      }
+    } catch (e) {
+       if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+    } finally {
+      if(mounted) setState(() => _isLoading = false);
+    }
+  }
+  
+  // 弹出的滑块数字选择器
   Future<void> _showNumberSliderDialog({ 
     required String title, required int currentValue, required Function(int) onConfirm,
   }) async {
@@ -512,7 +526,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         return StatefulBuilder(builder: (context, setStateDialog) {
           return Dialog(
             backgroundColor: Colors.transparent,
-            insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+            insetPadding: const EdgeInsets.all(24),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(16),
               child: BackdropFilter(
@@ -529,47 +543,20 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                     children: [
                       Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
                       const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.06),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(tempValue.toString(), style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white)),
+                      Text(tempValue.toString(), style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white)),
+                      Slider(
+                        value: tempValue.toDouble(), min: 0, max: 10, divisions: 10,
+                        activeColor: Colors.white, inactiveColor: Colors.white30,
+                        onChanged: (v) { setStateDialog(() { tempValue = v.toInt(); }); },
                       ),
-                      const SizedBox(height: 12),
-                      SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          activeTrackColor: Colors.white, inactiveTrackColor: Colors.white38,
-                          thumbColor: Colors.white, overlayColor: Colors.white.withOpacity(0.3),
-                          valueIndicatorTextStyle: const TextStyle(color: Colors.white), trackHeight: 4,
+                      Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel', style: TextStyle(color: Colors.white))),
+                        ElevatedButton(
+                           onPressed: () { onConfirm(tempValue); Navigator.pop(context); },
+                           style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1D5DC7)),
+                           child: const Text('OK', style: TextStyle(color: Colors.white)),
                         ),
-                        child: Slider(
-                          value: tempValue.toDouble(),
-                          min: 0, max: 10, divisions: 10,
-                          label: tempValue.toString(),
-                          onChanged: (v) { setStateDialog(() { tempValue = v.toInt(); }); },
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          TextButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            child: const Text('Cancel', style: TextStyle(color: Colors.white)),
-                          ),
-                          const SizedBox(width: 8),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF1D5DC7),
-                              foregroundColor: Colors.white, 
-                            ),
-                            onPressed: () { onConfirm(tempValue); Navigator.of(context).pop(); },
-                            child: const Text('OK'),
-                          ),
-                        ],
-                      ),
+                      ])
                     ],
                   ),
                 ),
@@ -581,519 +568,66 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     );
   }
 
-  // --- 11. 【UI 构建辅助函数】 ---
-  // (这些都是您原来的 _build... 函数，现在已修复)
-
-  Widget _buildGlassCard({required Widget child}) { 
-     return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10.0, sigmaY: 10.0),
-        child: Container(
-          padding: const EdgeInsets.all(16.0),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.15),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withOpacity(0.2)),
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildImagePicker() {
+  // 本地图片区域
+  Widget _buildImageSection() {
     final List<String> existingUrls = List<String>.from(_existingPropertyData['imageUrls'] ?? []);
+    bool showExisting = _selectedImages.isEmpty && existingUrls.isNotEmpty;
     
     return GestureDetector(
       onTap: _pickImages,
       child: Container(
-        height: 150, 
+        height: 150,
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.1),
           borderRadius: BorderRadius.circular(15),
           border: Border.all(color: Colors.white.withOpacity(0.2)),
         ),
-        child: (_selectedImages.isEmpty && existingUrls.isEmpty)
-            ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.add_photo_alternate_outlined, color: Colors.white70, size: 40),
-                    const SizedBox(height: 8),
-                    Text(_isEditMode ? 'Tap to add/replace pictures' : 'Add Pictures', style: TextStyle(color: Colors.white70)),
-                  ],
-                ),
-              )
-            : _selectedImages.isNotEmpty
-            ? Padding(
-                padding: const EdgeInsets.all(8.0), 
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal, 
-                  itemCount: _selectedImages.length,
-                  itemBuilder: (context, index) {
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8.0), 
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(10.0), 
-                        child: Image.file(
-                          File(_selectedImages[index].path), 
-                          fit: BoxFit.cover, width: 134, height: 134,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              )
-            : Padding(
-                padding: const EdgeInsets.all(8.0), 
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal, 
-                  itemCount: existingUrls.length,
-                  itemBuilder: (context, index) {
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8.0), 
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(10.0), 
-                        child: Image.network( 
-                          existingUrls[index], 
-                          fit: BoxFit.cover, width: 134, height: 134,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-      ),
-    );
-  }
-
-  Widget _buildTextFormField({ 
-    required TextEditingController controller, required String labelText, required IconData icon,
-    String? Function(String?)? validator, TextInputType? keyboardType, int maxLines = 1,
-  }) {
-    return TextFormField(
-      controller: controller, validator: validator, keyboardType: keyboardType,
-      maxLines: maxLines, style: const TextStyle(color: Colors.white),
-      decoration: InputDecoration(
-        labelText: labelText, labelStyle: const TextStyle(color: Colors.white70),
-        prefixIcon: Icon(icon, color: Colors.white70),
-        filled: true, fillColor: Colors.white.withOpacity(0.1),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none), 
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none), 
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: Colors.white.withOpacity(0.5))),
-      ),
-    );
-  }
-
-  Widget _buildCheckboxGrid({ 
-    required String title,
-    required Map<String, IconData> options,
-    required Set<String> selectedOptions,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        Column(
-          children: options.entries.map((entry) {
-            final key = entry.key;
-            final icon = entry.value;
-            final isSelected = selectedOptions.contains(key);
-            return Container(
-              margin: const EdgeInsets.only(bottom: 8.0), 
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.06),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                leading: Icon(icon, color: Colors.white, size: 20),
-                title: Text(key, style: const TextStyle(color: Colors.white, fontSize: 14)),
-                trailing: Checkbox(
-                  value: isSelected,
-                  onChanged: (v) {
-                    setState(() { if (v == true) selectedOptions.add(key); else selectedOptions.remove(key); });
-                  },
-                  activeColor: Colors.white,
-                  checkColor: const Color(0xFF1D5DC7),
-                ),
-                onTap: () { setState(() { if (isSelected) selectedOptions.remove(key); else selectedOptions.add(key); }); }
-              ),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildContractPicker() {
-    final String? existingContractUrl = _existingPropertyData['contractUrl'];
-    
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('Contract Option', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: _buildChoiceChip(
-                label: 'Upload Existing', icon: Icons.upload_file,
-                selected: _contractOption == ContractOption.upload,
-                onSelected: (v) => setState(() {
-                  _contractOption = ContractOption.upload;
-                  _selectedContract = null; _selectedContractName = null;
-                }),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _buildChoiceChip(
-                label: 'Generate New', icon: Icons.auto_stories,
-                selected: _contractOption == ContractOption.generate,
-                onSelected: (v) => setState(() {
-                  _contractOption = ContractOption.generate;
-                  _selectedContract = null; _selectedContractName = null;
-                }),
-              ),
-            ),
-          ],
-        ),
-        AnimatedSize(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-          child: Column(
-            children: [
-              if (_contractOption == ContractOption.upload) _buildUploadUI(), 
-              if (_contractOption == ContractOption.generate) _buildGenerateUI(), 
-            ],
-          )
-        ),
-        
-        if (_selectedContract != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 16.0),
-            child: Container( 
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.green.withOpacity(0.3))
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.check_circle, color: Colors.greenAccent, size: 20),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      _selectedContractName ?? 'File Selected',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                      overflow: TextOverflow.ellipsis,
-                    ),
+        child: (!showExisting && _selectedImages.isEmpty)
+          ? Center(
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                const Icon(Icons.add_photo_alternate_outlined, color: Colors.white70, size: 40),
+                const SizedBox(height: 8),
+                Text(_isEditMode ? 'Tap to change pictures' : 'Add Pictures', style: const TextStyle(color: Colors.white70)),
+              ]))
+          : ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.all(8),
+              itemCount: showExisting ? existingUrls.length : _selectedImages.length,
+              itemBuilder: (context, index) {
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: showExisting
+                      ? Image.network(existingUrls[index], fit: BoxFit.cover, width: 134, height: 134)
+                      : Image.file(File(_selectedImages[index].path), fit: BoxFit.cover, width: 134, height: 134),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white70, size: 20),
-                    onPressed: () {
-                      setState(() {
-                        _selectedContract = null;
-                        _selectedContractName = null;
-                      });
-                    },
-                  )
-                ],
-              ),
+                );
+              },
             ),
-          )
-        else if (_isEditMode && existingContractUrl != null && existingContractUrl.isNotEmpty && _contractOption == ContractOption.none)
-          Padding(
-            padding: const EdgeInsets.only(top: 16.0),
-            child: Container( 
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1), 
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.check_box_outlined, color: Colors.white70, size: 20),
-                  const SizedBox(width: 10),
-                  const Expanded(
-                    child: Text(
-                      'Using existing contract',
-                      style: TextStyle(color: Colors.white70, fontStyle: FontStyle.italic),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-  
-  Widget _buildUploadUI() { 
-    return Padding(
-      padding: const EdgeInsets.only(top: 16.0),
-      child: GestureDetector(
-        onTap: _pickContract, 
-        child: InputDecorator(
-          decoration: InputDecoration(
-            labelText: _isEditMode ? 'Upload Replacement PDF' : 'Contract (Optional PDF)',
-            labelStyle: const TextStyle(color: Colors.white70),
-            prefixIcon: const Icon(Icons.description_outlined, color: Colors.white70),
-            filled: true,
-            fillColor: Colors.white.withOpacity(0.1),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none), 
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none), 
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: Colors.white.withOpacity(0.5))),
-          ),
-          child: Text(
-            _isEditMode ? 'Tap to replace existing PDF' : 'Tap to select PDF file', 
-            style: TextStyle(color: Colors.white70, fontSize: 16)),
-        ),
       ),
     );
   }
 
-  Widget _buildCommunityDropdown() {
-    return DropdownButtonFormField<Map<String, dynamic>>( // 👈 【已修复】
-      value: _selectedCommunity,
-      decoration: InputDecoration(
-        labelText: 'Community / Apartment',
-        labelStyle: const TextStyle(color: Colors.white70),
-        prefixIcon: Icon(_isCommunityListLoading ? Icons.hourglass_top : Icons.apartment, color: Colors.white70),
-        filled: true,
-        fillColor: Colors.white.withOpacity(0.1),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: Colors.white.withOpacity(0.5))),
-      ),
-      dropdownColor: const Color(0xFF295a68), 
-      style: const TextStyle(color: Colors.white, fontSize: 16),
-      iconEnabledColor: Colors.white70,
-      isExpanded: true,
-      hint: Text(
-        _isCommunityListLoading ? 'Loading communities...' : 'Select community', 
-        style: const TextStyle(color: Colors.white70)
-      ),
-      validator: (value) => value == null ? 'Please select a community' : null,
-      onChanged: _isCommunityListLoading ? null : (Map<String, dynamic>? newValue) { // 👈 【已修复】
-        setState(() {
-          _selectedCommunity = newValue;
-        });
-      },
-      items: _communityList.map((Map<String, dynamic> community) { // 👈 【已修复】
-        return DropdownMenuItem<Map<String, dynamic>>( // 👈 【已修复】
-          value: community,
-          child: Text(community['name'] as String? ?? 'Unnamed', overflow: TextOverflow.ellipsis), // 👈 【已修复】
-        );
-      }).toList(),
-    );
-  }
-  
-  Widget _buildGenerateUI() { 
-    return Padding(
-      padding: const EdgeInsets.only(top: 16.0),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 2,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _generatedContractLanguage,
-                  dropdownColor: const Color(0xFF295a68),
-                  style: const TextStyle(color: Colors.white),
-                  icon: const Icon(Icons.language, color: Colors.white70),
-                  items: const [
-                    DropdownMenuItem(value: 'zh', child: Text('中文')),
-                    DropdownMenuItem(value: 'en', child: Text('English')),
-                  ],
-                  onChanged: (val) {
-                    if (val != null) setState(() => _generatedContractLanguage = val);
-                  },
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            flex: 3,
-            child: ElevatedButton.icon(
-              onPressed: _isLoading ? null : _generateContract,
-              icon: _isLoading ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.auto_stories, size: 18),
-              label: Text(_isLoading ? 'Generating...' : 'Generate'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1D5DC7),
-                foregroundColor: Colors.white, 
-                padding: const EdgeInsets.symmetric(vertical: 16), 
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  Widget _buildChoiceChip({ 
-    required String label,
-    required IconData icon,
-    required bool selected,
-    required Function(bool) onSelected,
-  }) {
-    final Color backgroundColor = selected 
-        ? const Color(0xFF1D5DC7).withOpacity(0.5) 
-        : Colors.white.withOpacity(0.2); 
-    final Color contentColor = Colors.white; 
-    final Border border = selected
-        ? Border.all(color: Colors.white, width: 1.5) 
-        : Border.all(color: Colors.white.withOpacity(0.3)); 
-
-    return GestureDetector(
-      onTap: () => onSelected(true),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(10), 
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0), 
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), 
-            decoration: BoxDecoration(
-              color: backgroundColor, borderRadius: BorderRadius.circular(10),
-              border: border, 
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center, 
-              children: [
-                Icon(icon, color: contentColor, size: 20), 
-                const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: TextStyle(color: contentColor, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDatePicker() => GestureDetector( 
-    onTap: () => _selectDate(context),
-    child: InputDecorator(
-      decoration: InputDecoration(
-        labelText: 'Available Date',
-        labelStyle: const TextStyle(color: Colors.white70),
-        prefixIcon: const Icon(Icons.calendar_today, color: Colors.white70),
-        filled: true,
-        fillColor: Colors.white.withOpacity(0.1),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none), 
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none), 
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: Colors.white.withOpacity(0.5))),
-      ),
-      child: Text(
-        _selectedDate == null ? 'Select Date' : DateFormat('dd/MM/yyyy').format(_selectedDate!),
-        style: TextStyle(color: _selectedDate == null ? Colors.white70 : Colors.white, fontSize: 16),
-      ),
-    ),
-  );
-
-  Widget _buildNumericFeatureItem({ 
-    required String label,
-    required IconData icon,
-    required int value,
-    required Function(int) onConfirmed,
-  }) {
-    return GestureDetector(
-      onTap: () {
-        _showNumberSliderDialog(title: label, currentValue: value, onConfirm: onConfirmed);
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.06),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: Colors.white, size: 20),
-            const SizedBox(width: 12),
-            Expanded(child: Text(label, style: const TextStyle(color: Colors.white, fontSize: 14))),
-            Text(value.toString(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(width: 6),
-            const Icon(Icons.chevron_right, color: Colors.white70, size: 22),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFurnishingSelector() { 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('Furnishing Status', style: TextStyle(color: Colors.white70, fontSize: 16)),
-        const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: DropdownButton<String>(
-            value: _selectedFurnishing,
-            dropdownColor: const Color(0xFF295a68),
-            isExpanded: true,
-            underline: const SizedBox(),
-            style: const TextStyle(color: Colors.white),
-            items: _furnishingOptions.map((option) {
-              return DropdownMenuItem<String>(
-                value: option,
-                child: Text(option, style: const TextStyle(color: Colors.white)),
-              );
-            }).toList(),
-            onChanged: (val) {
-              if (val != null) setState(() => _selectedFurnishing = val);
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ---------------- 主界面 Build ----------------
+  // --- Build 方法 (核心) ---
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
+        backgroundColor: Colors.transparent, elevation: 0,
         title: Text(_isEditMode ? 'Edit Property' : 'Add New Property', style: const TextStyle(color: Colors.white)),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: Stack(
         fit: StackFit.expand,
         children: [
+          // 背景渐变
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFF153a44), Color(0xFF295a68),
-                  Color(0xFF5d8fa0), Color(0xFF94bac4),
-                ],
+                colors: [Color(0xFF153a44), Color(0xFF295a68), Color(0xFF5d8fa0), Color(0xFF94bac4)],
               ),
             ),
           ),
@@ -1105,157 +639,138 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _buildImagePicker(),
+                    // 1. 普通图片
+                    _buildImageSection(),
                     const SizedBox(height: 16),
-                    _buildGlassCard( // Main Info
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _buildCommunityDropdown(), 
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildTextFormField(
-                                  controller: _floorController, 
-                                  labelText: 'Floor Level', 
-                                  icon: Icons.stairs_outlined,
-                                  keyboardType: TextInputType.text, 
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: _buildTextFormField(
-                                  controller: _unitController, 
-                                  labelText: 'Unit / Room No.', 
-                                  icon: Icons.meeting_room_outlined,
-                                  keyboardType: TextInputType.text, 
-                                  validator: (value) => (value == null || value.isEmpty) 
-                                      ? 'Please enter unit' : null,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          _buildFurnishingSelector(),
-                          const SizedBox(height: 16),
-                          _buildTextFormField(controller: _descriptionController, labelText: 'More Description', icon: Icons.description_outlined, maxLines: 3),
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(child: _buildDatePicker()),
-                              const SizedBox(width: 16),
-                              Expanded(child: _buildTextFormField(controller: _priceController, labelText: 'Price(RM)', icon: Icons.attach_money, keyboardType: TextInputType.number)),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          _buildTextFormField(controller: _sizeController, labelText: 'Size (sqft)', icon: Icons.square_foot, keyboardType: TextInputType.number),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    _buildGlassCard( // Property Features
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Property Features', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 10),
-                          Column(
-                            children: [
-                              _buildNumericFeatureItem(label: 'Air Conditioner', icon: Icons.ac_unit, value: _airConditioners, onConfirmed: (v) => setState(() => _airConditioners = v)),
-                              const SizedBox(height: 8),
-                              _buildNumericFeatureItem(label: 'Bedroom', icon: Icons.king_bed_outlined, value: _bedrooms, onConfirmed: (v) => setState(() => _bedrooms = v)),
-                              const SizedBox(height: 8),
-                              _buildNumericFeatureItem(label: 'Bathroom', icon: Icons.bathtub_outlined, value: _bathrooms, onConfirmed: (v) => setState(() => _bathrooms = v)),
-                              const SizedBox(height: 8),
-                              _buildNumericFeatureItem(label: 'Car Park', icon: Icons.local_parking_outlined, value: _parking, onConfirmed: (v) => setState(() => _parking = v)),
-                              const Divider(color: Colors.white30, height: 24), 
-                              ..._featureOptions.entries.map((e) {
-                                final key = e.key;
-                                if (key.toLowerCase().contains('air')) { 
-                                  return const SizedBox.shrink(); 
-                                }
-                                final isSelected = _selectedFeatures.contains(key);
-                                return Container(
-                                  margin: const EdgeInsets.only(bottom: 8.0),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.06),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: ListTile(
-                                    contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                                    leading: Icon(e.value, color: Colors.white, size: 20),
-                                    title: Text(key, style: const TextStyle(color: Colors.white, fontSize: 14)),
-                                    trailing: Checkbox(
-                                      value: isSelected,
-                                      onChanged: (v) {
-                                        setState(() {
-                                          if (v == true) _selectedFeatures.add(key);
-                                          else _selectedFeatures.remove(key);
-                                        });
-                                      },
-                                      activeColor: Colors.white,
-                                      checkColor: const Color(0xFF1D5DC7),
-                                    ),
-                                    onTap: () { 
-                                      setState(() {
-                                        if (isSelected) _selectedFeatures.remove(key);
-                                        else _selectedFeatures.add(key);
-                                      });
-                                    },
-                                  ),
-                                );
-                              }).toList(),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    _buildGlassCard( // Facilities
-                      child: _buildCheckboxGrid(title: 'Facilities', options: _facilityOptions, selectedOptions: _selectedFacilities),
-                    ),
 
+                    // ✅ 2. 360 全景图 (集成组件)
+                    PanoramaUploadCard(
+                      selectedFile: _selected360Image,
+                      existingUrl: _existing360Url,
+                      onTap: _pick360Image,
+                      onClear: () {
+                        setState(() {
+                          _selected360Image = null;
+                          _existing360Url = null;
+                        });
+                      },
+                    ),
                     const SizedBox(height: 16),
-                    _buildGlassCard(child: _buildContractPicker()),
+                    
+                    // 3. 主要信息
+                    GlassCard(
+                      child: MainInfoForm(
+                        communityList: _communityList.map((e) => e['name'] as String).toList(),
+                        selectedCommunity: _selectedCommunity?['name'],
+                        isCommunityListLoading: _isCommunityListLoading,
+                        floorController: _floorController,
+                        unitController: _unitController,
+                        descriptionController: _descriptionController,
+                        priceController: _priceController,
+                        sizeController: _sizeController,
+                        selectedDate: _selectedDate,
+                        selectedFurnishing: _selectedFurnishing,
+                        furnishingOptions: _furnishingOptions,
+                        onCommunityChanged: (val) {
+                           setState(() {
+                             _selectedCommunity = _communityList.firstWhereOrNull((c) => c['name'] == val);
+                           });
+                        },
+                        onFurnishingChanged: (v) => setState(() => _selectedFurnishing = v!),
+                        onDateTap: () async {
+                           final picked = await showDatePicker(
+                             context: context, initialDate: _selectedDate ?? DateTime.now(),
+                             firstDate: DateTime.now(), lastDate: DateTime(2101));
+                           if(picked != null) setState(() => _selectedDate = picked);
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // 4. 特性
+                    GlassCard(
+                      child: PropertyFeaturesForm(
+                        airConditioners: _airConditioners,
+                        bedrooms: _bedrooms,
+                        bathrooms: _bathrooms,
+                        parking: _parking,
+                        featureOptions: _featureOptions,
+                        selectedFeatures: _selectedFeatures,
+                        onShowSlider: (title, val, cb) => _showNumberSliderDialog(title: title, currentValue: val, onConfirm: cb),
+                        onToggleFeature: (key) => setState(() {
+                           if(_selectedFeatures.contains(key)) _selectedFeatures.remove(key);
+                           else _selectedFeatures.add(key);
+                        }),
+                        onUpdateAirConditioners: (v) => setState(() => _airConditioners = v),
+                        onUpdateBedrooms: (v) => setState(() => _bedrooms = v),
+                        onUpdateBathrooms: (v) => setState(() => _bathrooms = v),
+                        onUpdateParking: (v) => setState(() => _parking = v),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // 5. 设施
+                    GlassCard(
+                      child: FacilitiesForm(
+                        facilityOptions: _facilityOptions,
+                        selectedFacilities: _selectedFacilities,
+                        onToggle: (key) => setState(() {
+                           if(_selectedFacilities.contains(key)) _selectedFacilities.remove(key);
+                           else _selectedFacilities.add(key);
+                        }),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // 6. 合同
+                    GlassCard(
+                      child: ContractPicker(
+                        isLoading: _isLoading,
+                        contractOption: _contractOption,
+                        selectedContract: _selectedContract,
+                        selectedContractName: _selectedContractName ?? 
+                          (_isEditMode && _existingPropertyData['contractUrl'] != null ? "Existing Contract on File" : null),
+                        generatedContractLanguage: _generatedContractLanguage,
+                        onOptionSelected: (opt) => setState(() => _contractOption = opt),
+                        onLanguageChanged: (l) => setState(() => _generatedContractLanguage = l!),
+                        onPickContract: _pickContract,
+                        onGenerateContract: _generateContract,
+                        onClearContract: () => setState(() {
+                           _selectedContract = null;
+                           _selectedContractName = null;
+                           _contractOption = ContractOption.none;
+                        }),
+                      ),
+                    ),
                     const SizedBox(height: 24),
                     
                     // 提交按钮
-                    ElevatedButton( 
+                    ElevatedButton(
                       onPressed: _isLoading ? null : _showConfirmDialog,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF1D5DC7),
-                        foregroundColor: Colors.white, 
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                       ),
-                      child: _isLoading
-                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3))
-                          : Text(_isEditMode ? 'Save Changes' : 'Add Property', style: const TextStyle(color: Colors.white, fontSize: 16)),
+                      child: _isLoading 
+                        ? const SizedBox(height:20, width:20, child: CircularProgressIndicator(color: Colors.white))
+                        : Text(_isEditMode ? 'Save Changes' : 'Post Property', style: const TextStyle(fontSize: 16, color: Colors.white)),
                     ),
                     
-                    // 删除按钮
-                    if (_isEditMode) ...[
-                      const SizedBox(height: 16),
+                    // 删除按钮 (仅编辑模式)
+                    if(_isEditMode) ...[
+                      const SizedBox(height: 12),
                       OutlinedButton.icon(
-                        onPressed: _isLoading ? null : _deleteProperty, 
-                        icon: const Icon(Icons.delete_outline),
-                        label: const Text('Delete Property'),
+                        onPressed: _isLoading ? null : _deleteProperty,
+                        icon: const Icon(Icons.delete, color: Colors.redAccent),
+                        label: const Text('Delete Property', style: TextStyle(color: Colors.redAccent)),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.red[300], 
-                          side: BorderSide(color: Colors.red[300]!),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                          ),
+                          side: const BorderSide(color: Colors.redAccent),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                         ),
-                      ),
+                      )
                     ],
-
                     const SizedBox(height: 20),
                   ],
                 ),

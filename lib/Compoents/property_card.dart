@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import 'favorite_button.dart';
 import 'glass_card.dart'; 
 
-
-
 /// 用于在 PropertyCard 内部显示 "3 🛏️" 的迷你标签
 class _MiniInfoChip extends StatelessWidget {
   final IconData icon;
@@ -42,10 +40,10 @@ class PropertyCard extends StatelessWidget {
   final VoidCallback onTap;
   final bool showFavoriteButton;
   
-  // ✅ 1. 新增 margin 参数 (为了 Favorites 页面的流光边框)
+  // margin 参数 (为了 Favorites 页面的流光边框)
   final EdgeInsetsGeometry? margin;
   
-  // ✅ 2. 新增 heroTagPrefix 参数 (为了解决 Hero 动画冲突)
+  // heroTagPrefix 参数 (为了解决 Hero 动画冲突)
   final String heroTagPrefix;
 
   const PropertyCard({
@@ -55,7 +53,7 @@ class PropertyCard extends StatelessWidget {
     required this.onTap,
     this.showFavoriteButton = true,
     this.margin,
-    this.heroTagPrefix = 'global', // ✅ 默认为 global
+    this.heroTagPrefix = 'global',
   });
 
   @override
@@ -63,9 +61,12 @@ class PropertyCard extends StatelessWidget {
     final String communityName = propertyData['communityName'] ?? 'Unknown Property';
     final String unit = propertyData['unitNumber'] ?? '';
     final String floor = propertyData['floor'] ?? '';
-    final double price = (propertyData['price'] ?? 0.0).toDouble();
+    final double price = (propertyData['price'] as num?)?.toDouble() ?? 0.0;
     final List<String> imageUrls = List<String>.from(propertyData['imageUrls'] ?? []);
     final String thumbnailUrl = imageUrls.isNotEmpty ? imageUrls[0] : '';
+    
+    // ✅ 检查是否有 360 全景图
+    final bool has360 = propertyData['360ImageUrl'] != null && propertyData['360ImageUrl'].toString().isNotEmpty;
     
     final int bedrooms = propertyData['bedrooms'] ?? 0;
     final int bathrooms = propertyData['bathrooms'] ?? 0;
@@ -76,39 +77,75 @@ class PropertyCard extends StatelessWidget {
     return Padding(
       // 使用传入的 margin，如果没有则默认 bottom: 16
       padding: margin ?? const EdgeInsets.only(bottom: 16.0),
-      child: GestureDetector(
-        onTap: onTap,
-        child: Stack(
-          children: [
-            GlassCard(
+      child: Stack(
+        children: [
+          // ========================================================
+          // 1. 底层：卡片主体 (负责跳转详情)
+          // ========================================================
+          GestureDetector(
+            onTap: onTap, // 点击卡片跳转
+            behavior: HitTestBehavior.opaque, // 确保空白处也能响应
+            child: GlassCard(
               child: SizedBox(
                 height: 150,
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // 1.1 左侧缩略图
+                    // 1.1 左侧缩略图区域
                     Hero(
-                      // ✅ 3. 关键：组合前缀和ID，确保标签唯一
                       tag: "${heroTagPrefix}_$propertyId",
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12.0),
-                        child: Container(
-                          width: 120,
-                          height: 120,
-                          color: Colors.white.withOpacity(0.1),
-                          child: thumbnailUrl.isNotEmpty
-                              ? Image.network(
-                                  thumbnailUrl,
-                                  fit: BoxFit.cover,
-                                  loadingBuilder: (context, child, progress) =>
-                                      progress == null ? child : const Center(child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70)),
-                                  errorBuilder: (context, error, stack) =>
-                                      const Icon(Icons.image_not_supported_outlined, color: Colors.white54, size: 40),
-                                )
-                              : const Icon(Icons.image_not_supported_outlined, color: Colors.white54, size: 40),
-                        ),
+                      child: Stack(
+                        children: [
+                          // 图片本体
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12.0),
+                            child: Container(
+                              width: 120,
+                              height: 120,
+                              color: Colors.white.withOpacity(0.1),
+                              child: thumbnailUrl.isNotEmpty
+                                  ? Image.network(
+                                      thumbnailUrl,
+                                      fit: BoxFit.cover,
+                                      loadingBuilder: (context, child, progress) =>
+                                          progress == null ? child : const Center(child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70)),
+                                      errorBuilder: (context, error, stack) =>
+                                          const Icon(Icons.image_not_supported_outlined, color: Colors.white54, size: 40),
+                                    )
+                                  : const Icon(Icons.image_not_supported_outlined, color: Colors.white54, size: 40),
+                            ),
+                          ),
+                          
+                          // ✅ 1.1.1 新增：360 标识 (如果有 360 图)
+                       // ✅ 风格 3：悬浮黑胶囊 (放右下角)
+                          if (has360)
+                            Positioned(
+                              bottom: 6,
+                              right: 6,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.75),
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4)],
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.vrpano, color: Colors.white, size: 14),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      "360° Tour",
+                                      style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
+                    
                     const SizedBox(width: 16),
 
                     // 1.2 中间信息
@@ -183,15 +220,27 @@ class PropertyCard extends StatelessWidget {
                 ),
               ),
             ),
+          ),
 
-            if (showFavoriteButton)
-              Positioned(
-                top: 10,
-                right: 10,
+          // ========================================================
+          // 2. 顶层：收藏按钮 (加了防穿透护盾)
+          // ========================================================
+          if (showFavoriteButton)
+            Positioned(
+              top: 10,
+              right: 10,
+              // ✅ 修复核心：这层 GestureDetector 专门负责拦截点击
+              child: GestureDetector(
+                onTap: () {
+                  // 这里什么都不做，单纯为了消耗掉点击事件
+                  // 这样点击就不会穿透到底下的 Card 上去了
+                },
+                // Opaque 确保即使点击了透明区域也能被拦截
+                behavior: HitTestBehavior.opaque,
                 child: FavoriteButton(propertyId: propertyId),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }

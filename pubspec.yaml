@@ -42,6 +42,7 @@ dependencies:
 
   # 💠 url launcher
   url_launcher: ^6.3.2
+  panorama_viewer: ^2.0.7
 
 dev_dependencies:
   flutter_test:

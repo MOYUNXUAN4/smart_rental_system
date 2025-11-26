@@ -2,7 +2,8 @@ import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-// 导入你原本的组件
+
+// 请确保这些路径与你项目实际路径一致
 import 'package:smart_rental_system/Compoents/property_card.dart';
 import 'package:smart_rental_system/Screens/compare_screen.dart';
 import 'package:smart_rental_system/Screens/search_screen.dart';
@@ -158,9 +159,7 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
             AnimatedPositioned(
               duration: const Duration(milliseconds: 450),
               curve: Curves.easeOutBack,
-              bottom: _selectedIds.length >= 2
-                  ? (20 + bottomSafe)
-                  : -160,
+              bottom: _selectedIds.length >= 2 ? (20 + bottomSafe) : -160,
               left: 30,
               right: 30,
               child: AnimatedScale(
@@ -244,48 +243,54 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
         final String docId = data['id'];
         final bool isSelected = _selectedIds.contains(docId);
 
-        return GestureDetector(
-          onTap: () => _handleItemTap(docId),
-          child: AnimatedScale(
-            scale: isSelected && _isSelectionMode ? 0.96 : 1.0,
+        // ✅ 修正点1：移除了外层的 GestureDetector
+        return AnimatedScale(
+          scale: isSelected && _isSelectionMode ? 0.96 : 1.0,
+          duration: const Duration(milliseconds: 200),
+          child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              margin: const EdgeInsets.only(bottom: 20),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                border: _isSelectionMode && isSelected
-                    ? Border.all(color: glowColor, width: 2)
-                    : null,
-                boxShadow: _isSelectionMode && isSelected
-                    ? [
-                        BoxShadow(
-                          color: glowColor.withOpacity(0.45),
-                          blurRadius: 15,
-                          spreadRadius: 1,
-                        )
-                      ]
-                    : [],
-              ),
-              child: Stack(
-                children: [
-                  IgnorePointer(
-                    ignoring: true,
-                    child: PropertyCard(
-                      propertyData: data,
-                      propertyId: docId,
-                      heroTagPrefix: widget.preFilteredData != null
-                          ? 'search_result'
-                          : 'list_mode',
-                      margin: EdgeInsets.zero,
-                      onTap: () {},
-                    ),
-                  ),
+            margin: const EdgeInsets.only(bottom: 20),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              border: _isSelectionMode && isSelected
+                  ? Border.all(color: glowColor, width: 2)
+                  : null,
+              boxShadow: _isSelectionMode && isSelected
+                  ? [
+                      BoxShadow(
+                        color: glowColor.withOpacity(0.45),
+                        blurRadius: 15,
+                        spreadRadius: 1,
+                      )
+                    ]
+                  : [],
+            ),
+            child: Stack(
+              children: [
+                // ✅ 修正点2：移除了 IgnorePointer，直接使用 PropertyCard
+                PropertyCard(
+                  propertyData: data,
+                  propertyId: docId,
+                  heroTagPrefix: widget.preFilteredData != null
+                      ? 'search_result'
+                      : 'list_mode',
+                  margin: EdgeInsets.zero,
+                  
+                  // ✅ 修正点3：将点击逻辑传入 Card 内部处理
+                  onTap: () => _handleItemTap(docId),
+                  
+                  // ✅ 修正点4：选择模式下隐藏收藏按钮，避免重叠
+                  showFavoriteButton: !_isSelectionMode,
+                ),
 
-                  if (_isSelectionMode)
-                    Positioned(
-                      top: 10,
-                      right: 10,
+                // 选择模式下的打钩图标
+                if (_isSelectionMode)
+                  Positioned(
+                    top: 10,
+                    right: 10,
+                    // 使用 IgnorePointer 确保即便点到这个图标，也会穿透到底下 Card 的 onTap
+                    child: IgnorePointer(
+                      ignoring: true, 
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 250),
                         width: 30,
@@ -303,8 +308,8 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
                             : null,
                       ),
                     ),
-                ],
-              ),
+                  ),
+              ],
             ),
           ),
         );
@@ -321,8 +326,7 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
       child: SafeArea(
         bottom: false,
         child: Padding(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(30),
             child: BackdropFilter(

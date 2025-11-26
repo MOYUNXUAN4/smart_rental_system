@@ -1,4 +1,3 @@
-// lib/Screens/property_detail_screen.dart
 import 'dart:ui';
 
 import 'package:carousel_slider/carousel_slider.dart';
@@ -7,9 +6,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
+// ✅ 1. 引入全景图查看包
+import 'package:panorama_viewer/panorama_viewer.dart'; 
 import 'package:smart_rental_system/screens/add_property_screen.dart';
 
-// ✅ 1. 导入收藏按钮
 import '../Compoents/favorite_button.dart';
 import '../Compoents/glass_card.dart';
 import '../Compoents/landlord_contact_card.dart';
@@ -51,6 +51,37 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
       ),
     );
   }
+  
+  // ✅ 打开全屏 360 查看器
+  void _openFullScreen360(String imageUrl) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          backgroundColor: Colors.black,
+          body: Stack(
+            children: [
+              PanoramaViewer(
+                sensorControl: SensorControl.orientation, // 开启陀螺仪
+                child: Image.network(imageUrl),
+              ),
+              Positioned(
+                top: 40,
+                left: 20,
+                child: CircleAvatar(
+                  backgroundColor: Colors.black54,
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   void _navigateToLogin() {
     Navigator.push(
@@ -81,6 +112,110 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     }
   }
 
+  // ✅ 优化后的玻璃 Dialog：紧贴内容，无多余留白
+  Widget _buildGlassDialog(BuildContext context, Widget? child) {
+    const Color primaryBlue = Color(0xFF1D5DC7);
+
+    return Theme(
+      data: ThemeData.dark().copyWith(
+        colorScheme: const ColorScheme.dark(
+          primary: primaryBlue,
+          onPrimary: Colors.white,
+          onSurface: Colors.white,
+          surface: Colors.transparent, 
+        ),
+        dialogBackgroundColor: Colors.transparent,
+        
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(
+            foregroundColor: Colors.white, 
+            textStyle: const TextStyle(fontWeight: FontWeight.bold),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          ),
+        ),
+        
+        timePickerTheme: TimePickerThemeData(
+          backgroundColor: Colors.transparent,
+          dialBackgroundColor: Colors.white.withOpacity(0.15),
+          dialHandColor: primaryBlue,
+          dialTextColor: Colors.white,
+          hourMinuteColor: MaterialStateColor.resolveWith((states) =>
+            states.contains(MaterialState.selected)
+                ? primaryBlue.withOpacity(0.5) 
+                : Colors.white.withOpacity(0.1)),
+          hourMinuteTextColor: Colors.white,
+          dayPeriodColor: MaterialStateColor.resolveWith((states) =>
+             states.contains(MaterialState.selected) ? primaryBlue : Colors.transparent),
+          dayPeriodTextColor: MaterialStateColor.resolveWith((states) =>
+             states.contains(MaterialState.selected) ? Colors.white : Colors.white70),
+          dayPeriodBorderSide: const BorderSide(color: Colors.white30),
+          inputDecorationTheme: InputDecorationTheme(
+            contentPadding: EdgeInsets.zero,
+            filled: true,
+            fillColor: Colors.white.withOpacity(0.1),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Colors.white30),
+            ),
+          ),
+        ),
+        
+        datePickerTheme: DatePickerThemeData(
+          backgroundColor: Colors.transparent,
+          headerBackgroundColor: primaryBlue,
+          headerForegroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          dayOverlayColor: MaterialStateProperty.all(primaryBlue.withOpacity(0.3)),
+          // 减小默认圆角
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            // ✅ 关键：只给左右留一点边距，不给上下留
+            margin: const EdgeInsets.symmetric(horizontal: 24),
+            decoration: BoxDecoration(
+              // ✅ 高亮渐变
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.white.withOpacity(0.45),
+                  Colors.white.withOpacity(0.15),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: Colors.white.withOpacity(0.6), width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.25),
+                  blurRadius: 20,
+                  spreadRadius: 2,
+                )
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                // ✅ 关键：去除所有 Padding 和 Flexible，紧贴内容
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    child ?? const SizedBox(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ 底部弹窗：输入框变“瘦”了
   void _showBookingSheet(BuildContext context, String landlordUid, String communityName) {
     DateTime? selectedDate;
     TimeOfDay? selectedTime;
@@ -94,23 +229,50 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setModalState) {
             return BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
               child: Container(
                 padding: EdgeInsets.only(
-                  bottom: MediaQuery.of(context).viewInsets.bottom, 
-                  left: 16, right: 16, top: 20,
+                  bottom: MediaQuery.of(context).viewInsets.bottom + 20, 
+                  left: 20, right: 20, top: 20,
                 ),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF295a68).withOpacity(0.8), 
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.white.withOpacity(0.45),
+                      Colors.white.withOpacity(0.15),
+                    ],
+                  ),
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+                  border: Border.all(color: Colors.white.withOpacity(0.6), width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 15,
+                      spreadRadius: 2,
+                    )
+                  ],
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Center(
+                      child: Container(
+                        width: 50,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.7),
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
                     const Text(
                       'Schedule a Viewing',
-                      style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                      style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 16),
                     
@@ -121,7 +283,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                         style: const TextStyle(color: Colors.white, fontSize: 16),
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12), // 减小间距
                     
                     Row(
                       children: [
@@ -133,6 +295,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                                 initialDate: DateTime.now().add(const Duration(days: 1)), 
                                 firstDate: DateTime.now().add(const Duration(days: 1)), 
                                 lastDate: DateTime.now().add(const Duration(days: 30)),
+                                builder: (context, child) => _buildGlassDialog(context, child),
                               );
                               if (pickedDate != null) {
                                 setModalState(() {
@@ -141,6 +304,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                               }
                             },
                             child: InputDecorator(
+                              // 这里调用了变瘦后的 Decoration
                               decoration: _bookingInputDecoration(Icons.calendar_today, 'Date'),
                               child: Text(
                                 selectedDate == null ? 'Select Date' : DateFormat('dd/MM/yyyy').format(selectedDate!),
@@ -149,13 +313,14 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 12),
                         Expanded(
                           child: InkWell(
                             onTap: () async {
                               final TimeOfDay? pickedTime = await showTimePicker(
                                 context: context,
                                 initialTime: TimeOfDay.now(),
+                                builder: (context, child) => _buildGlassDialog(context, child),
                               );
                               if (pickedTime != null) {
                                 setModalState(() {
@@ -164,6 +329,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                               }
                             },
                             child: InputDecorator(
+                              // 这里调用了变瘦后的 Decoration
                               decoration: _bookingInputDecoration(Icons.access_time, 'Time'),
                               child: Text(
                                 selectedTime == null ? 'Select Time' : selectedTime!.format(context),
@@ -181,7 +347,9 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                         backgroundColor: const Color(0xFF1D5DC7),
                         foregroundColor: Colors.white,
                         minimumSize: const Size(double.infinity, 50),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        elevation: 5,
+                        shadowColor: const Color(0xFF1D5DC7).withOpacity(0.4),
                       ),
                       onPressed: isSubmitting ? null : () async {
                         if (selectedDate == null || selectedTime == null) {
@@ -224,9 +392,9 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                       },
                       child: isSubmitting 
                         ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3))
-                        : const Text('Send Request'),
+                        : const Text('Send Request', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                   ],
                 ),
               ),
@@ -255,6 +423,8 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
           final propertyData = snapshot.data!.data() as Map<String, dynamic>;
           final List<String> imageUrls = List<String>.from(propertyData['imageUrls'] ?? []);
+          final String? url360 = propertyData['360ImageUrl'];
+          
           final String communityName = propertyData['communityName'] ?? 'N/A';
           final String unitNumber = propertyData['unitNumber'] ?? 'N/A';
           final String floor = propertyData['floor'] ?? 'N/A';
@@ -317,7 +487,6 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                     elevation: 0,
                     iconTheme: const IconThemeData(color: Colors.white),
                     flexibleSpace: FlexibleSpaceBar(
-                      // ✅ 2. 添加 Hero 动画，与列表页对应
                       background: Hero(
                         tag: widget.propertyId,
                         child: _ImageCarousel(
@@ -327,7 +496,6 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                       ),
                     ),
                     actions: [
-                      // ✅ 3. 插入收藏按钮 (始终显示)
                       Padding(
                         padding: const EdgeInsets.only(right: 12.0),
                         child: FavoriteButton(propertyId: widget.propertyId),
@@ -398,6 +566,65 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                                 ],
                               ),
                             ),
+                            
+                            // 360 全景图展示区域
+                            if (url360 != null && url360.isNotEmpty) ...[
+                              const SizedBox(height: 16),
+                              GlassCard(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        _buildSectionTitle('360° Virtual Tour'),
+                                        IconButton(
+                                          icon: const Icon(Icons.fullscreen, color: Colors.white),
+                                          onPressed: () => _openFullScreen360(url360),
+                                          tooltip: "Full Screen",
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 12),
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: SizedBox(
+                                        height: 250, // 预览区域高度
+                                        child: Stack(
+                                          children: [
+                                            PanoramaViewer(
+                                              // 开启陀螺仪
+                                              sensorControl: SensorControl.orientation,
+                                              child: Image.network(url360),
+                                            ),
+                                            // 提示遮罩
+                                            Positioned(
+                                              bottom: 10,
+                                              right: 10,
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.black54,
+                                                  borderRadius: BorderRadius.circular(8),
+                                                ),
+                                                child: const Row(
+                                                  children: [
+                                                    Icon(Icons.threesixty, color: Colors.white, size: 16),
+                                                    SizedBox(width: 4),
+                                                    Text("Move phone to look around", style: TextStyle(color: Colors.white, fontSize: 10)),
+                                                  ],
+                                                ),
+                                              ),
+                                            )
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+
                             const SizedBox(height: 16),
                             if (description.isNotEmpty) ...[
                               GlassCard(
@@ -601,6 +828,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     return iconMap[feature.toLowerCase()] ?? Icons.check_circle_outline; 
   }
   
+  // ✅ 核心调整：InputDecorator 变瘦了
   InputDecoration _bookingInputDecoration(IconData icon, String label) {
     return InputDecoration(
       labelText: label,
@@ -608,6 +836,10 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
       prefixIcon: Icon(icon, color: Colors.white70, size: 20),
       filled: true,
       fillColor: Colors.white.withOpacity(0.1),
+      // isDense: true 减少默认高度
+      isDense: true, 
+      // contentPadding 减小内边距，让盒子变矮
+      contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
       focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white.withOpacity(0.5))),
