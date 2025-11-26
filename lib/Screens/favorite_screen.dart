@@ -16,6 +16,7 @@ import 'package:smart_rental_system/Screens/compare_screen.dart';
 import '../Compoents/glowing_wrapper.dart'; 
 
 
+
 enum SortType { newest, priceLowToHigh, priceHighToLow }
 
 class FavoritesScreen extends StatefulWidget {
@@ -25,7 +26,7 @@ class FavoritesScreen extends StatefulWidget {
   State<FavoritesScreen> createState() => _FavoritesScreenState();
 }
 
-class _FavoritesScreenState extends State<FavoritesScreen> {
+class _FavoritesScreenState extends State<FavoritesScreen> with TickerProviderStateMixin {
   final FavoriteService _favoriteService = FavoriteService();
   SortType _currentSort = SortType.newest;
   
@@ -36,15 +37,22 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   bool _isSelectionMode = false;
   final Set<String> _selectedIds = {};
 
+  late AnimationController _glowController;
+
   @override
   void initState() {
     super.initState();
     _setupDataListener();
+    _glowController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
   }
 
   @override
   void dispose() {
     _subscription?.cancel();
+    _glowController.dispose();
     super.dispose();
   }
 
@@ -134,17 +142,17 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       
       final List<Map<String, dynamic>> propertiesData = selectedDocs.map((doc) {
         var data = doc.data() as Map<String, dynamic>;
-        // Ensure keys exist to prevent crashes
-        data['price'] = data['price'] ?? 0;
-        data['size_sqft'] = data['size_sqft'] ?? '0';
-        data['bedrooms'] = data['bedrooms'] ?? 0;
-        data['bathrooms'] = data['bathrooms'] ?? 0;
-        data['parking'] = data['parking'] ?? 0;
-        data['furnishing'] = data['furnishing'] ?? 'N/A';
-        data['features'] = data['features'] ?? [];
-        data['communityName'] = data['communityName'] ?? 'Unknown';
-        data['imageUrls'] = data['imageUrls'];
-        return data;
+        return {
+          'price': data['price'] ?? 0,
+          'size_sqft': data['size_sqft'] ?? '0',
+          'bedrooms': data['bedrooms'] ?? 0,
+          'bathrooms': data['bathrooms'] ?? 0,
+          'parking': data['parking'] ?? 0,
+          'furnishing': data['furnishing'] ?? 'N/A',
+          'communityName': data['communityName'] ?? 'Unknown',
+          'imageUrls': data['imageUrls'],
+          'features': data['features'] ?? [],
+        };
       }).toList();
 
       Navigator.push(
@@ -300,9 +308,10 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                 return GestureDetector(
                   onTap: () => _handleItemTap(doc.id, isUnavailable),
                   
-                  // ✅ 关键修改：使用 GlowingWrapper 包裹
-                  child: GlowingWrapper(
+                  // ✅ 修复：使用新的容器
+                  child: _GlowBorderContainer(
                     isSelected: _isSelectionMode && isSelected,
+                    animation: _glowController,
                     child: Stack(
                       children: [
                         IgnorePointer(
@@ -311,7 +320,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                             propertyData: data,
                             propertyId: doc.id,
                             showFavoriteButton: !_isSelectionMode,
-                            margin: EdgeInsets.zero, // Needed to fit inside the wrapper perfectly
+                            // ✅ 关键：去掉卡片自身边距，由外层容器控制
+                            margin: EdgeInsets.zero, 
                             onTap: () {},
                           ),
                         ),
@@ -322,7 +332,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                               duration: const Duration(milliseconds: 200),
                               width: 30, height: 30,
                               decoration: BoxDecoration(
-                                color: isSelected ? glowColor : Colors.black.withOpacity(0.3),
+                                // 勾选框：实心青色，更加明显
+                                color: isSelected ? glowColor : Colors.black.withOpacity(0.4),
                                 shape: BoxShape.circle,
                                 border: Border.all(color: Colors.white, width: 2),
                               ),
@@ -345,7 +356,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
               },
             ),
 
-          // 底部按钮：白色毛玻璃风格
+          // ✅ 底部按钮：纯净白色毛玻璃
           AnimatedPositioned(
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeInOutBack,
@@ -354,17 +365,25 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(30),
               child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2), // 纯白半透明
+                    color: Colors.white.withOpacity(0.15), // 提高一点透明度
                     borderRadius: BorderRadius.circular(30),
-                    border: Border.all(color: Colors.white30),
+                    border: Border.all(color: Colors.white.withOpacity(0.3)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      )
+                    ]
                   ),
                   child: Material(
                     color: Colors.transparent,
                     child: InkWell(
                       onTap: _selectedIds.length >= 2 ? _navigateToCompare : null,
+                      borderRadius: BorderRadius.circular(30),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         child: Row(
@@ -425,6 +444,57 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ✅ 最终修正版容器：
+// 1. 外部 margin 20 (解决紧凑问题)
+// 2. 背景色透明 (解决变色问题)
+// 3. 只有边缘光晕 (解决花哨问题)
+class _GlowBorderContainer extends StatelessWidget {
+  final bool isSelected;
+  final Widget child;
+  final AnimationController animation;
+
+  const _GlowBorderContainer({required this.isSelected, required this.child, required this.animation});
+
+  @override
+  Widget build(BuildContext context) {
+    const Color glowColor = Color(0xFF00E5FF);
+
+    // 未选中：给予默认下边距 (20px)
+    if (!isSelected) return Container(margin: const EdgeInsets.only(bottom: 20), child: child);
+
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, _) {
+        return Container(
+          margin: const EdgeInsets.only(bottom: 20), // ✅ 统一的间距，解决布局紧凑
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            // ✅ 背景透明，防止卡片变色
+            color: Colors.transparent, 
+            
+            // 边框
+            border: Border.all(color: glowColor, width: 2),
+            
+            // 光晕
+            boxShadow: [
+              BoxShadow(
+                color: glowColor.withOpacity(0.3 + 0.2 * animation.value), 
+                blurRadius: 12,
+                spreadRadius: 0, // 不向内扩散
+              )
+            ],
+          ),
+          // 裁剪圆角，让边框贴合
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: child,
+          ),
+        );
+      },
     );
   }
 }
