@@ -60,7 +60,7 @@ class TenantBookingCard extends StatelessWidget {
               filled: true,
               fillColor: Colors.white.withOpacity(0.12),
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(20), 
                 borderSide: BorderSide.none,
@@ -221,12 +221,11 @@ class TenantBookingCard extends StatelessWidget {
 
                       const SizedBox(height: 16),
                       
-                      // --- 3. 留言框 (样式已修复) ---
+                      // --- 3. 留言框 ---
                       TextField(
                         controller: noteController,
                         style: const TextStyle(color: Colors.white),
                         cursorColor: Colors.white,
-                        // ✅ 使用统一的样式
                         decoration: getBoxDecoration('Note to Landlord (Optional)', Icons.edit_note).copyWith(
                           alignLabelWithHint: true,
                         ),
@@ -296,7 +295,6 @@ class TenantBookingCard extends StatelessWidget {
     final String status = bookingData['status'] ?? 'Unknown';
     final String formattedTime = DateFormat('dd MMM, hh:mm a').format(meetingTimestamp.toDate());
 
-    // 状态颜色逻辑
     final bool isPending = status == 'application_pending';
     final Color currentStatusColor = isPending ? Colors.orangeAccent : statusColor;
     final IconData currentStatusIcon = isPending ? Icons.hourglass_top : statusIcon;
@@ -310,7 +308,6 @@ class TenantBookingCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 头部
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [

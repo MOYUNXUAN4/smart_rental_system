@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'dart:ui'; // 虽然这里不再定义GlassCard，但为了防止其他UI依赖，保留引用
+import 'dart:ui'; 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -9,14 +9,14 @@ import 'package:file_picker/file_picker.dart';
 import 'package:open_file/open_file.dart';
 import 'package:collection/collection.dart'; 
 
-// ✅ 引入自定义组件 (注意路径拼写匹配你的文件夹 'Compoents')
+// 引入你的自定义组件
 import '../Compoents/add_property_widgets.dart'; 
-import '../Compoents/panorama_widget.dart';     // 360 组件
+import '../Compoents/panorama_widget.dart';     
 import '../Compoents/contract_generator.dart';
-import '../Compoents/glass_card.dart';          // 👈 必须引入这个，删除底部的本地定义
+import '../Compoents/glass_card.dart';          
 
 class AddPropertyScreen extends StatefulWidget {
-  final String? propertyId; // 传入 ID 则为编辑模式
+  final String? propertyId; 
 
   const AddPropertyScreen({super.key, this.propertyId});
 
@@ -25,39 +25,31 @@ class AddPropertyScreen extends StatefulWidget {
 }
 
 class _AddPropertyScreenState extends State<AddPropertyScreen> {
-  // --- 核心状态变量 ---
   final _formKey = GlobalKey<FormState>();
   
-  // 文本控制器
   final _priceController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _sizeController = TextEditingController();
   final _floorController = TextEditingController();
   final _unitController = TextEditingController();
   
-  // UI 状态
   bool _isLoading = false;
   bool _isCommunityListLoading = true;
   
-  // 数据状态
   List<Map<String, dynamic>> _communityList = [];
   Map<String, dynamic>? _selectedCommunity;
   Map<String, dynamic> _existingPropertyData = {}; 
   
-  // 房源字段
   List<XFile> _selectedImages = []; 
   
-  // ✅ 360 全景图相关字段
   XFile? _selected360Image; 
   String? _existing360Url; 
 
-  // 合同相关
   File? _selectedContract;
   String? _selectedContractName;
   ContractOption _contractOption = ContractOption.none;
   String _generatedContractLanguage = 'zh';
   
-  // 其他属性
   DateTime? _selectedDate;
   int _bedrooms = 1;
   int _bathrooms = 1;
@@ -84,7 +76,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     'Free Outdoor Pool': Icons.pool, 'Parking Area': Icons.local_parking,
   };
 
-  // --- 初始化与销毁 ---
   @override
   void initState() {
     super.initState();
@@ -105,8 +96,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     _sizeController.dispose();
     super.dispose();
   }
-
-  // --- 数据获取逻辑 ---
 
   Future<void> _fetchLandlordName() async {
     try {
@@ -159,7 +148,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         _unitController.text = data['unitNumber'] ?? '';
 
         setState(() {
-          // 回填社区
           if (_communityList.isNotEmpty) {
             _selectedCommunity = _communityList.firstWhereOrNull(
               (c) => c['name'] == data['communityName'],
@@ -174,7 +162,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
           _selectedFacilities = Set<String>.from(data['facilities'] ?? []);
           _selectedDate = (data['availableDate'] as Timestamp?)?.toDate();
           
-          // 回填 360 图片
           if (data['360ImageUrl'] != null) {
             _existing360Url = data['360ImageUrl'];
           }
@@ -187,8 +174,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     }
   }
 
-  // --- 图片与文件选择 ---
-
   Future<void> _pickImages() async {
     final ImagePicker picker = ImagePicker();
     final List<XFile> images = await picker.pickMultiImage(imageQuality: 70, maxWidth: 1024);
@@ -197,11 +182,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     }
   }
 
-  // ✅ 360 图片选择 (支持拍照和相册)
   Future<void> _pick360Image() async {
     final ImagePicker picker = ImagePicker();
-
-    // 弹出底部菜单
     await showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF295a68),
@@ -214,8 +196,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
               const SizedBox(height: 10),
               Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white30, borderRadius: BorderRadius.circular(2))),
               const SizedBox(height: 20),
-              
-              // 选项 1: 拍照
               ListTile(
                 leading: const Icon(Icons.camera_alt, color: Colors.white),
                 title: const Text('Take a Photo', style: TextStyle(color: Colors.white)),
@@ -225,8 +205,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                   _processImagePick(picker, ImageSource.camera);
                 },
               ),
-              
-              // 选项 2: 相册
               ListTile(
                 leading: const Icon(Icons.photo_library, color: Colors.white),
                 title: const Text('Choose from Gallery', style: TextStyle(color: Colors.white)),
@@ -243,7 +221,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     );
   }
 
-  // 辅助选图处理
   Future<void> _processImagePick(ImagePicker picker, ImageSource source) async {
     try {
       if (source == ImageSource.camera) {
@@ -273,6 +250,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     }
   }
 
+  // ✅✅✅ 修复：填充了所有必填参数 (使用占位符) ✅✅✅
   Future<void> _generateContract() async {
     if (_selectedCommunity == null) {
        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a community first.'))); return;
@@ -286,11 +264,15 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       final String communityName = _selectedCommunity!['name'] as String;
       final String fullAddress = "${_unitController.text.trim()}, Floor ${_floorController.text.trim()}, $communityName";
       
+      // ✅ 使用新的 generateAndSaveContract，填入占位符
       final File generatedFile = await ContractGenerator.generateAndSaveContract(
-        landlordName: _landlordName, tenantName: "________________",
+        landlordName: _landlordName, 
+        tenantName: "________________", // 占位符
         propertyAddress: fullAddress, 
         rentAmount: _priceController.text.trim(),
-        startDate: "____/____/____", endDate: "____/____/____",
+        startDate: "____/____/____",   // 占位符
+        endDate: "____/____/____",     // 占位符
+        paymentDay: "__",              // 占位符
         language: _generatedContractLanguage,
       );
       
@@ -299,19 +281,58 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       if (mounted) {
         final bool? didConfirm = await showDialog<bool>(
           context: context, barrierDismissible: false,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Confirm Contract'),
-            content: const Text('Use this generated contract?'),
-            actions: [
-              TextButton(child: const Text('Cancel'), onPressed: () => Navigator.pop(ctx, false)),
-              ElevatedButton(child: const Text('Confirm'), onPressed: () => Navigator.pop(ctx, true)),
-            ],
+          // 你的白底毛玻璃弹窗代码
+          barrierColor: Colors.black.withOpacity(0.3),
+          builder: (ctx) => Dialog(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                child: Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.85),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white.withOpacity(0.6)),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text("Confirm Contract", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF153a44))),
+                      const SizedBox(height: 16),
+                      const Text("Use this generated contract for this property?", style: TextStyle(color: Colors.black87, fontSize: 16), textAlign: TextAlign.center),
+                      const SizedBox(height: 24),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(child: const Text('Cancel', style: TextStyle(color: Colors.grey)), onPressed: () => Navigator.pop(ctx, false)),
+                          const SizedBox(width: 10),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF1D5DC7),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            child: const Text('Confirm'), 
+                            onPressed: () => Navigator.pop(ctx, true),
+                          ),
+                        ],
+                      )
+                    ],
+                  ),
+                ),
+              ),
+            ),
           )
         );
+
         if (didConfirm == true && mounted) {
           setState(() {
             _selectedContract = generatedFile;
             _selectedContractName = "Generated_Contract_${DateTime.now().millisecondsSinceEpoch}.pdf";
+            _contractOption = ContractOption.generate; // 标记为已生成
           });
         }
       }
@@ -322,14 +343,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     }
   }
 
-  // --- 提交/更新/删除逻辑 ---
-
   Future<void> _showConfirmDialog() async {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedCommunity == null || _selectedDate == null) {
        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please check Community and Date fields.'))); return;
     }
-    // 检查是否有图
     bool hasImages = _selectedImages.isNotEmpty;
     if (_isEditMode && (_existingPropertyData['imageUrls'] as List?)?.isNotEmpty == true) {
       hasImages = true; 
@@ -380,7 +398,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception("User not logged in");
 
-      // 上传各种文件
       final imageUrls = await _uploadImages(_selectedImages);
       final contractUrl = _selectedContract != null ? await _uploadContract(_selectedContract!) : null;
       
@@ -449,7 +466,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         updateData['contractUrl'] = await _uploadContract(_selectedContract!);
       }
       
-      // 更新 360 图片
       if (_selected360Image != null) {
         final ref = FirebaseStorage.instance.ref().child('properties_360/${DateTime.now().millisecondsSinceEpoch}_pano.jpg');
         await ref.putFile(File(_selected360Image!.path));
@@ -489,7 +505,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     
     try {
       final storage = FirebaseStorage.instance;
-      // 删旧文件
       if (_existingPropertyData['contractUrl'] != null) {
         try { await storage.refFromURL(_existingPropertyData['contractUrl']).delete(); } catch (_) {}
       }
@@ -515,7 +530,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     }
   }
   
-  // 弹出的滑块数字选择器
   Future<void> _showNumberSliderDialog({ 
     required String title, required int currentValue, required Function(int) onConfirm,
   }) async {
@@ -568,7 +582,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     );
   }
 
-  // 本地图片区域
   Widget _buildImageSection() {
     final List<String> existingUrls = List<String>.from(_existingPropertyData['imageUrls'] ?? []);
     bool showExisting = _selectedImages.isEmpty && existingUrls.isNotEmpty;
@@ -609,7 +622,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     );
   }
 
-  // --- Build 方法 (核心) ---
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -622,7 +634,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // 背景渐变
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -639,11 +650,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // 1. 普通图片
                     _buildImageSection(),
                     const SizedBox(height: 16),
 
-                    // ✅ 2. 360 全景图 (集成组件)
                     PanoramaUploadCard(
                       selectedFile: _selected360Image,
                       existingUrl: _existing360Url,
@@ -657,7 +666,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                     ),
                     const SizedBox(height: 16),
                     
-                    // 3. 主要信息
                     GlassCard(
                       child: MainInfoForm(
                         communityList: _communityList.map((e) => e['name'] as String).toList(),
@@ -687,7 +695,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                     ),
                     const SizedBox(height: 16),
                     
-                    // 4. 特性
                     GlassCard(
                       child: PropertyFeaturesForm(
                         airConditioners: _airConditioners,
@@ -709,7 +716,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                     ),
                     const SizedBox(height: 16),
                     
-                    // 5. 设施
                     GlassCard(
                       child: FacilitiesForm(
                         facilityOptions: _facilityOptions,
@@ -722,7 +728,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                     ),
                     const SizedBox(height: 16),
                     
-                    // 6. 合同
                     GlassCard(
                       child: ContractPicker(
                         isLoading: _isLoading,
@@ -744,7 +749,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                     ),
                     const SizedBox(height: 24),
                     
-                    // 提交按钮
                     ElevatedButton(
                       onPressed: _isLoading ? null : _showConfirmDialog,
                       style: ElevatedButton.styleFrom(
@@ -757,7 +761,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                         : Text(_isEditMode ? 'Save Changes' : 'Post Property', style: const TextStyle(fontSize: 16, color: Colors.white)),
                     ),
                     
-                    // 删除按钮 (仅编辑模式)
                     if(_isEditMode) ...[
                       const SizedBox(height: 12),
                       OutlinedButton.icon(

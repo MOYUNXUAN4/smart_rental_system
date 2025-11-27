@@ -33,6 +33,8 @@ dependencies:
   printing: ^5.11.0
   signature: ^6.3.0
   open_file: ^3.5.10
+  flutter_pdfview: ^1.3.2
+
 
   # 💠 UI 基础图标
   cupertino_icons: ^1.0.8
