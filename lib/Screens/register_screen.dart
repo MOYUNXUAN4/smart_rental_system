@@ -2,9 +2,10 @@ import 'dart:ui'; // 导入毛玻璃效果
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:smart_rental_system/services/account_check_screen.dart';
 
 // ✅ 导入 AccountCheckScreen 以修复导航
-import '../Services/account_check_screen.dart';
+import '../services/account_check_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   final String userType;
@@ -78,7 +79,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           // Clear navigation stack and go to AccountCheckScreen
           Navigator.pushAndRemoveUntil(
             context,
-            MaterialPageRoute(builder: (context) => const AccountCheckScreen()),
+            MaterialPageRoute(builder: (context) =>  AccountCheckScreen()),
             (Route<dynamic> route) => false,
           );
         }
