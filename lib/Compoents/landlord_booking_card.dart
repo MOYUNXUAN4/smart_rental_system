@@ -1,9 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart'; // ✅ 必须引入 Storage
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:intl/intl.dart';
 import 'glass_card.dart'; 
+// 记得引入你刚才新建的房东签字页面
+import '../screens/landlord_sign_contract_screen.dart'; 
 import 'contract_generator.dart'; 
 
 class LandlordBookingCard extends StatelessWidget {
@@ -16,7 +18,6 @@ class LandlordBookingCard extends StatelessWidget {
     required this.docId,
   });
 
-  // ... (getTenantName, getPropertyName, updateStatus 保持不变) ...
   Future<String> _getTenantName(String tenantUid) async {
     try {
       final doc = await FirebaseFirestore.instance.collection('users').doc(tenantUid).get();
@@ -38,7 +39,6 @@ class LandlordBookingCard extends StatelessWidget {
     if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Status updated to $newStatus")));
   }
 
-  // ✅✅✅ 核心修复：生成 -> 上传 -> 更新 URL ✅✅✅
   Future<void> _handleReleaseContract(BuildContext context) async {
     final String propertyId = bookingData['propertyId'];
     final String tenantUid = bookingData['tenantUid'];
@@ -59,11 +59,9 @@ class LandlordBookingCard extends StatelessWidget {
     );
 
     try {
-      // 1. 准备数据
       final propertyDoc = await FirebaseFirestore.instance.collection('properties').doc(propertyId).get();
       final propertyData = propertyDoc.data() as Map<String, dynamic>;
       
-      // 获取真实名字
       String landlordName = "Landlord"; 
       if (landlordUid != null) {
           final uDoc = await FirebaseFirestore.instance.collection('users').doc(landlordUid).get();
@@ -71,7 +69,7 @@ class LandlordBookingCard extends StatelessWidget {
       }
 
       final tenantDoc = await FirebaseFirestore.instance.collection('users').doc(tenantUid).get();
-      final String tenantName = tenantDoc.data()?['name'] ?? "Tenant"; // ✅ 确保拿到租客名
+      final String tenantName = tenantDoc.data()?['name'] ?? "Tenant";
 
       final start = startDateTs.toDate();
       final end = endDateTs.toDate();
@@ -79,7 +77,6 @@ class LandlordBookingCard extends StatelessWidget {
       final String endStr = DateFormat('yyyy-MM-dd').format(end);
       final String paymentDay = "${start.day}"; 
 
-      // 2. 生成新 PDF (包含租客名和日期)
       final File generatedPdf = await ContractGenerator.generateAndSaveContract(
         landlordName: landlordName, 
         tenantName: tenantName, 
@@ -91,21 +88,14 @@ class LandlordBookingCard extends StatelessWidget {
         language: 'en', 
       );
 
-      // 3. ✅✅✅ 上传新 PDF 到 Firebase Storage ✅✅✅
-      // 这一步非常重要！它会覆盖掉之前的“空模板”逻辑，使用这次生成的实名合同
       final String fileName = 'contracts/final_${docId}_${DateTime.now().millisecondsSinceEpoch}.pdf';
       final ref = FirebaseStorage.instance.ref().child(fileName);
-      
-      // 执行上传
       await ref.putFile(generatedPdf);
-      
-      // 获取新文件的下载链接
       final String newContractUrl = await ref.getDownloadURL(); 
 
-      // 4. 更新数据库，指向这个新文件
       await FirebaseFirestore.instance.collection('bookings').doc(docId).update({
         'status': 'ready_to_sign', 
-        'contractUrl': newContractUrl, // ✅ 指向刚刚生成并上传的文件
+        'contractUrl': newContractUrl, 
         'contractReleasedAt': Timestamp.now(),
         'monthlyPaymentDay': paymentDay, 
         'isReadByTenant': false, 
@@ -127,9 +117,7 @@ class LandlordBookingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-     // ... (UI 部分保持不变，为了不刷屏，请直接复用上一个回复中的 build 方法 UI) ...
-     // ... 请保留你之前的 build 方法 ...
-     final String status = bookingData['status'] ?? 'pending';
+    final String status = bookingData['status'] ?? 'pending';
     final Timestamp meetingTimestamp = bookingData['meetingTime'];
     final String meetingPoint = bookingData['meetingPoint'] ?? '';
     final String formattedTime = DateFormat('dd MMM, hh:mm a').format(meetingTimestamp.toDate());
@@ -153,6 +141,7 @@ class LandlordBookingCard extends StatelessWidget {
     else if (status == 'application_pending') { statusColor = Colors.amber; statusText = "APP PENDING"; }
     else if (status == 'ready_to_sign') { statusColor = Colors.cyanAccent; }
     else if (status == 'rejected') { statusColor = Colors.redAccent; }
+    else if (status == 'awaiting_payment') { statusColor = Colors.purpleAccent; } // 新增状态颜色
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0), 
@@ -273,6 +262,7 @@ class LandlordBookingCard extends StatelessWidget {
                 ),
               ],
 
+              // 按钮逻辑区
               if (status == 'pending') ...[
                 const SizedBox(height: 8),
                 Row(
@@ -311,11 +301,30 @@ class LandlordBookingCard extends StatelessWidget {
                 ),
               ],
 
+              // ✅✅✅ 房东复签按钮 ✅✅✅
               if (status == 'tenant_signed') ...[
                 const SizedBox(height: 8),
                 SizedBox(
                   width: double.infinity,
-                  child: _buildSolidBtn("Counter Sign", Colors.teal, () { /* 签字逻辑 */ }),
+                  child: _buildSolidBtn("Counter Sign", Colors.teal, () {
+                    // 跳转到房东签字页面
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => LandlordSignContractScreen(docId: docId),
+                      ),
+                    );
+                  }),
+                ),
+              ],
+              
+              if (status == 'awaiting_payment') ...[
+                const SizedBox(height: 6),
+                const Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Text("Waiting for payment...", style: TextStyle(color: Colors.purpleAccent, fontSize: 10, fontStyle: FontStyle.italic)),
+                  ],
                 ),
               ],
             ],
