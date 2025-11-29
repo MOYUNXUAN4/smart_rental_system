@@ -1,13 +1,13 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:flutter/material.dart';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:signature/signature.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_pdfview/flutter_pdfview.dart';
+import 'package:signature/signature.dart';
 
-// ⚠️ 确保路径与你的项目一致 (注意 Compoents 拼写)
+// ⚠️ 确保路径与你的项目一致
 import '../Compoents/contract_generator.dart'; 
 
 class LandlordSignContractScreen extends StatefulWidget {
@@ -208,12 +208,11 @@ class _LandlordSignContractScreenState extends State<LandlordSignContractScreen>
   }
 
   // ==========================================
-  // 4. 最终提交 (生成双语版并上传)
+  // 4. 最终提交 (生成双语版 -> 上传 -> 删旧文件 -> 更新库)
   // ==========================================
   Future<void> _uploadAndFinish() async {
     // 确保有签名数据
     if (_mySignatureBytes == null) {
-      // 如果意外丢失，尝试重新从 controller 获取
       if (_sigController.isNotEmpty) {
         _mySignatureBytes = await _sigController.toPngBytes();
       }
@@ -223,25 +222,39 @@ class _LandlordSignContractScreenState extends State<LandlordSignContractScreen>
     setState(() => _isUploading = true);
 
     try {
+      // ✅ 1. 先获取旧文件的 URL (为了上传成功后删除)
+      final docSnap = await FirebaseFirestore.instance.collection('bookings').doc(widget.docId).get();
+      final oldData = docSnap.data() ?? {};
+      
+      // 收集待删除列表
+      List<String> urlsToDelete = [];
+      if (oldData['contractUrl'] != null) urlsToDelete.add(oldData['contractUrl']);
+      if (oldData['contractUrlZh'] != null) urlsToDelete.add(oldData['contractUrlZh']);
+      if (oldData['contractUrlEn'] != null) urlsToDelete.add(oldData['contractUrlEn']);
+
       final storage = FirebaseStorage.instance;
 
-      // A. 上传房东签名图片 (用于存档)
+      // ✅ 2. 上传房东签名图片 (用于存档)
       await storage.ref().child('signatures/${widget.docId}_landlord.png').putData(_mySignatureBytes!);
 
-      // B. 生成并上传 【中文最终版】
+      // ✅ 3. 生成并上传 【中文最终版】
       File zhPdf = await _generateFinalPdfFile('zh', _mySignatureBytes!);
-      await storage.ref().child('contracts/${widget.docId}_final_zh.pdf').putFile(zhPdf);
-      String zhUrl = await storage.ref().child('contracts/${widget.docId}_final_zh.pdf').getDownloadURL();
+      // 加个时间戳后缀防止覆盖缓存问题
+      String timeSuffix = DateTime.now().millisecondsSinceEpoch.toString();
+      String zhPath = 'contracts/${widget.docId}_final_zh_$timeSuffix.pdf';
+      await storage.ref().child(zhPath).putFile(zhPdf);
+      String zhUrl = await storage.ref().child(zhPath).getDownloadURL();
 
-      // C. 生成并上传 【英文最终版】
+      // ✅ 4. 生成并上传 【英文最终版】
       File enPdf = await _generateFinalPdfFile('en', _mySignatureBytes!);
-      await storage.ref().child('contracts/${widget.docId}_final_en.pdf').putFile(enPdf);
-      String enUrl = await storage.ref().child('contracts/${widget.docId}_final_en.pdf').getDownloadURL();
+      String enPath = 'contracts/${widget.docId}_final_en_$timeSuffix.pdf';
+      await storage.ref().child(enPath).putFile(enPdf);
+      String enUrl = await storage.ref().child(enPath).getDownloadURL();
 
-      // D. 决定主显示链接 (根据房东当前的语言偏好，或者默认中文)
+      // ✅ 5. 决定主显示链接
       String mainUrl = _currentLanguage == 'zh' ? zhUrl : enUrl;
 
-      // E. 更新 Firestore 状态
+      // ✅ 6. 更新 Firestore 状态
       await FirebaseFirestore.instance.collection('bookings').doc(widget.docId).update({
         'status': 'awaiting_payment',      // 状态流转到等待付款
         'contractUrl': mainUrl,            // 主链接
@@ -251,15 +264,34 @@ class _LandlordSignContractScreenState extends State<LandlordSignContractScreen>
         'isReadByTenant': false,           // 通知租客
       });
 
+      // ✅ 7. 🔥 清理旧文件 (核心新功能)
+      print("Starting cleanup of old contract files...");
+      for (String url in urlsToDelete) {
+        // 只有当旧 URL 和新 URL 不一样时才删 (防止误删)
+        if (url != zhUrl && url != enUrl) {
+          try {
+            await storage.refFromURL(url).delete();
+            print("Deleted old file: $url");
+          } catch (e) {
+            print("Could not delete file (maybe already gone): $e");
+          }
+        }
+      }
+      
+      // 尝试清理可能存在的租客中间态文件
+      try {
+         await storage.ref().child('contracts/${widget.docId}_tenant_signed.pdf').delete();
+      } catch (e) { /* Ignore */ }
+
       if (mounted) {
         Navigator.pop(context); 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Contract Finalized! Sent to Tenant."), backgroundColor: Colors.green)
+          const SnackBar(content: Text("Contract Finalized & Old drafts cleaned!"), backgroundColor: Colors.green)
         );
       }
     } catch (e) {
        print("Upload error: $e");
-       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Upload Error: $e")));
+       if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Upload Error: $e")));
     } finally {
       if(mounted) setState(() => _isUploading = false);
     }
