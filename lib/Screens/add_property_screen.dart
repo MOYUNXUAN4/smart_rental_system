@@ -250,7 +250,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     }
   }
 
-  // ✅✅✅ 修复：填充了所有必填参数 (使用占位符) ✅✅✅
   Future<void> _generateContract() async {
     if (_selectedCommunity == null) {
        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a community first.'))); return;
@@ -264,77 +263,30 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       final String communityName = _selectedCommunity!['name'] as String;
       final String fullAddress = "${_unitController.text.trim()}, Floor ${_floorController.text.trim()}, $communityName";
       
-      // ✅ 使用新的 generateAndSaveContract，填入占位符
       final File generatedFile = await ContractGenerator.generateAndSaveContract(
         landlordName: _landlordName, 
-        tenantName: "________________", // 占位符
+        tenantName: "________________", 
         propertyAddress: fullAddress, 
         rentAmount: _priceController.text.trim(),
-        startDate: "____/____/____",   // 占位符
-        endDate: "____/____/____",     // 占位符
-        paymentDay: "__",              // 占位符
+        startDate: "____/____/____",   
+        endDate: "____/____/____",     
+        paymentDay: "__",              
         language: _generatedContractLanguage,
       );
       
+      // 预览逻辑保持不变
       await OpenFile.open(generatedFile.path);
 
       if (mounted) {
-        final bool? didConfirm = await showDialog<bool>(
-          context: context, barrierDismissible: false,
-          // 你的白底毛玻璃弹窗代码
-          barrierColor: Colors.black.withOpacity(0.3),
-          builder: (ctx) => Dialog(
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                child: Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.85),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white.withOpacity(0.6)),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text("Confirm Contract", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF153a44))),
-                      const SizedBox(height: 16),
-                      const Text("Use this generated contract for this property?", style: TextStyle(color: Colors.black87, fontSize: 16), textAlign: TextAlign.center),
-                      const SizedBox(height: 24),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          TextButton(child: const Text('Cancel', style: TextStyle(color: Colors.grey)), onPressed: () => Navigator.pop(ctx, false)),
-                          const SizedBox(width: 10),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF1D5DC7),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                            child: const Text('Confirm'), 
-                            onPressed: () => Navigator.pop(ctx, true),
-                          ),
-                        ],
-                      )
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          )
-        );
-
-        if (didConfirm == true && mounted) {
-          setState(() {
-            _selectedContract = generatedFile;
-            _selectedContractName = "Generated_Contract_${DateTime.now().millisecondsSinceEpoch}.pdf";
-            _contractOption = ContractOption.generate; // 标记为已生成
-          });
-        }
+        // 不需要弹窗确认是否使用了，因为现在只是预览
+        // 或者保留弹窗，但如果确认了，也不需要存文件，只是设置状态为 "系统生成"
+        setState(() {
+            // 这里我们不再保存 _selectedContract，因为不需要上传
+            // 我们只标记用户选择了"系统生成"这个意图
+            _selectedContract = null; 
+            _selectedContractName = "System Generated Template";
+            _contractOption = ContractOption.generate; 
+        });
       }
     } catch (e) {
       if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Generation failed: $e')));
@@ -392,6 +344,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     return await ref.getDownloadURL();
   }
 
+  // ✅ 核心修改：_addProperty
   Future<void> _addProperty() async {
     setState(() => _isLoading = true);
     try {
@@ -399,7 +352,16 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       if (user == null) throw Exception("User not logged in");
 
       final imageUrls = await _uploadImages(_selectedImages);
-      final contractUrl = _selectedContract != null ? await _uploadContract(_selectedContract!) : null;
+      
+      // ✅ 仅当选择“手动上传”时，才上传文件
+      // 如果是“系统生成”，contractUrl 设为 null，表示后续流程需动态生成
+      String? contractUrl;
+      if (_contractOption == ContractOption.upload && _selectedContract != null) {
+          contractUrl = await _uploadContract(_selectedContract!);
+      } else {
+          // 系统生成模式，或者是 None，不存 URL
+          contractUrl = null; 
+      }
       
       String? url360;
       if (_selected360Image != null) {
@@ -424,7 +386,13 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         'features': _selectedFeatures.toList(),
         'facilities': _selectedFacilities.toList(),
         'imageUrls': imageUrls,
+        
+        // 保存合同 URL (如果是上传的)
         'contractUrl': contractUrl,
+        
+        // 建议增加一个字段标记是否使用了系统模板，方便后续逻辑判断
+        'useSystemContract': (_contractOption == ContractOption.generate),
+
         '360ImageUrl': url360, 
         'createdAt': Timestamp.now(),
       });
@@ -440,6 +408,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     }
   }
 
+  // ✅ 核心修改：_updateProperty
   Future<void> _updateProperty() async {
     setState(() => _isLoading = true);
     try {
@@ -462,8 +431,15 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       if (_selectedImages.isNotEmpty) {
         updateData['imageUrls'] = await _uploadImages(_selectedImages);
       }
-      if (_selectedContract != null) {
+      
+      // ✅ 仅当选择了上传文件，才上传并更新 URL
+      if (_contractOption == ContractOption.upload && _selectedContract != null) {
         updateData['contractUrl'] = await _uploadContract(_selectedContract!);
+        updateData['useSystemContract'] = false;
+      } else if (_contractOption == ContractOption.generate) {
+        // 如果切回了系统生成，清空之前的 URL
+        updateData['contractUrl'] = FieldValue.delete();
+        updateData['useSystemContract'] = true;
       }
       
       if (_selected360Image != null) {

@@ -7,6 +7,7 @@ import 'package:signature/signature.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_pdfview/flutter_pdfview.dart';
 
+// ⚠️ 确保路径与你的项目一致 (注意 Compoents 拼写)
 import '../Compoents/contract_generator.dart'; 
 
 class LandlordSignContractScreen extends StatefulWidget {
@@ -26,14 +27,19 @@ class _LandlordSignContractScreenState extends State<LandlordSignContractScreen>
   );
 
   String? _currentDisplayPdfPath; 
-  File? _finalSignedPdfFile;
-  Uint8List? _tenantSignatureBytes; 
+  Uint8List? _tenantSignatureBytes; // 租客的签名数据
+  Uint8List? _mySignatureBytes;     // 房东自己的签名缓存
   
   bool _isLoading = true;
-  bool _isPreviewMode = false;
+  bool _isPreviewMode = false;      // 是否处于预览最终版模式
   bool _isUploading = false;
-  // 新增：错误信息变量，方便调试
   String? _errorMessage; 
+
+  // 语言控制
+  String _currentLanguage = 'zh';
+  
+  // 缓存数据 (避免反复读库)
+  Map<String, dynamic>? _cachedData;
 
   @override
   void initState() {
@@ -47,57 +53,120 @@ class _LandlordSignContractScreenState extends State<LandlordSignContractScreen>
     super.dispose();
   }
 
+  // ==========================================
+  // 1. 初始化数据：下载租客签名 + 准备合同文本
+  // ==========================================
   Future<void> _prepareData() async {
     try {
-      // 1. 下载租客签名
-      // ⚠️ 如果租客端没有成功上传签名图，这里会报错
+      // A. 下载租客签名 (必须步骤)
       final pngRef = FirebaseStorage.instance.ref().child('signatures/${widget.docId}_tenant.png');
-      
       try {
-        final tenantBytes = await pngRef.getData(5 * 1024 * 1024);
+        final tenantBytes = await pngRef.getData(5 * 1024 * 1024); // Max 5MB
         _tenantSignatureBytes = tenantBytes;
       } catch (e) {
-        print("Tenant signature not found or error: $e");
-        // 如果找不到租客签名，我们可以选择继续（单签名）或者报错
-        // 这里我们继续，但租客签名位会是空的
+        print("Warning: Tenant signature missing or download failed: $e");
+        // 即使租客签名下载失败，也允许房东查看，但签名位会空缺
       }
 
-      // 2. 获取数据
-      final docSnapshot = await FirebaseFirestore.instance.collection('bookings').doc(widget.docId).get();
-      if (!docSnapshot.exists) throw Exception("Booking data not found");
-      final data = docSnapshot.data() as Map<String, dynamic>;
+      // B. 获取 Booking 和 Property 数据
+      if (_cachedData == null) {
+        final bookingDoc = await FirebaseFirestore.instance.collection('bookings').doc(widget.docId).get();
+        if (!bookingDoc.exists) throw Exception("Booking not found");
+        final bookingData = bookingDoc.data() as Map<String, dynamic>;
 
-      // 3. 生成初始预览
-      final File initialPdf = await ContractGenerator.generateAndSaveContract(
-        landlordName: data['landlordName'] ?? 'Unknown',
-        tenantName: data['tenantName'] ?? 'Unknown',
-        propertyAddress: data['propertyName'] ?? 'Unknown Address',
-        rentAmount: (data['rentAmount'] ?? 0).toString(),
-        startDate: data['startDate'] ?? '',
-        endDate: data['endDate'] ?? '',
-        paymentDay: (data['paymentDay'] ?? '1st').toString(),
-        language: 'en',
-        tenantSignature: _tenantSignatureBytes, 
-        landlordSignature: null, 
-      );
+        final String propertyId = bookingData['propertyId'];
+        final String tenantUid = bookingData['tenantUid'];
+        final String? landlordUid = bookingData['landlordUid'];
 
-      if (mounted) {
-        setState(() {
-          _currentDisplayPdfPath = initialPdf.path;
-          _isLoading = false;
-          _errorMessage = null; // 清除错误
-        });
+        final propertyDoc = await FirebaseFirestore.instance.collection('properties').doc(propertyId).get();
+        final propertyData = propertyDoc.data() ?? {};
+        
+        String landlordName = "Landlord";
+        if (landlordUid != null) {
+          final lDoc = await FirebaseFirestore.instance.collection('users').doc(landlordUid).get();
+          if (lDoc.exists) landlordName = lDoc.data()?['name'] ?? "Landlord";
+        }
+
+        final tDoc = await FirebaseFirestore.instance.collection('users').doc(tenantUid).get();
+        final String tenantName = tDoc.exists ? (tDoc.data()?['name'] ?? "Tenant") : "Tenant";
+
+        _cachedData = {
+          'landlordName': landlordName,
+          'tenantName': tenantName,
+          'address': "${propertyData['unitNumber'] ?? ''}, ${propertyData['communityName'] ?? ''}",
+          'rent': (propertyData['price'] ?? 0).toString(),
+          'leaseStartDate': bookingData['leaseStartDate'],
+          'leaseEndDate': bookingData['leaseEndDate'],
+        };
       }
+
+      // C. 生成初始 PDF (此时只有租客签名，房东签名传 null)
+      await _renderPdf(landlordSignature: null); 
+
     } catch (e) {
-      print("Error preparing data: $e");
+      print("Error in _prepareData: $e");
       if(mounted) {
         setState(() {
           _isLoading = false;
-          // 记录错误信息，不让界面崩溃
-          _errorMessage = "Failed to load contract data: $e"; 
+          _errorMessage = "Failed to load contract data. Please try again."; 
         });
       }
     }
+  }
+
+  // ==========================================
+  // 2. 核心渲染方法 (调用 Generator)
+  // ==========================================
+  Future<void> _renderPdf({required Uint8List? landlordSignature}) async {
+    if (_cachedData == null) return;
+
+    String startStr = "";
+    String endStr = "";
+    String paymentDay = "1";
+    if (_cachedData!['leaseStartDate'] != null) {
+       DateTime s = (_cachedData!['leaseStartDate'] as Timestamp).toDate();
+       startStr = "${s.year}-${s.month}-${s.day}";
+       paymentDay = "${s.day}";
+    }
+    if (_cachedData!['leaseEndDate'] != null) {
+       DateTime e = (_cachedData!['leaseEndDate'] as Timestamp).toDate();
+       endStr = "${e.year}-${e.month}-${e.day}";
+    }
+
+    // 调用通用的 PDF 生成器
+    final File pdfFile = await ContractGenerator.generateAndSaveContract(
+      landlordName: _cachedData!['landlordName'],
+      tenantName: _cachedData!['tenantName'],
+      propertyAddress: _cachedData!['address'],
+      rentAmount: _cachedData!['rent'],
+      startDate: startStr,
+      endDate: endStr,
+      paymentDay: paymentDay,
+      language: _currentLanguage, // 动态语言
+      tenantSignature: _tenantSignatureBytes, // 始终传入租客签名
+      landlordSignature: landlordSignature,   // 根据状态传入房东签名
+    );
+
+    if (mounted) {
+      setState(() {
+        _currentDisplayPdfPath = pdfFile.path;
+        _isLoading = false;
+        _errorMessage = null;
+      });
+    }
+  }
+
+  // ==========================================
+  // 3. 交互逻辑 (语言切换 & 预览)
+  // ==========================================
+  void _toggleLanguage() {
+    setState(() {
+      _currentLanguage = _currentLanguage == 'zh' ? 'en' : 'zh';
+      _isLoading = true;
+    });
+    // 切换语言时，如果处于预览模式，需要保持房东的签名显示
+    // 如果还没预览，则不显示房东签名
+    _renderPdf(landlordSignature: _isPreviewMode ? _mySignatureBytes : null);
   }
 
   Future<void> _generatePreview() async {
@@ -111,36 +180,15 @@ class _LandlordSignContractScreenState extends State<LandlordSignContractScreen>
     setState(() => _isLoading = true);
 
     try {
+      // 获取房东签名的图片数据
       final Uint8List? landlordBytes = await _sigController.toPngBytes();
-
+      
       if (landlordBytes != null) {
-        final docSnapshot = await FirebaseFirestore.instance.collection('bookings').doc(widget.docId).get();
-        final data = docSnapshot.data() as Map<String, dynamic>;
-
-        final File signedFile = await ContractGenerator.generateAndSaveContract(
-          landlordName: data['landlordName'] ?? '',
-          tenantName: data['tenantName'] ?? '',
-          propertyAddress: data['propertyName'] ?? '',
-          rentAmount: (data['rentAmount'] ?? 0).toString(),
-          startDate: data['startDate'] ?? '',
-          endDate: data['endDate'] ?? '',
-          paymentDay: (data['paymentDay'] ?? '1st').toString(),
-          language: 'en',
-          tenantSignature: _tenantSignatureBytes, 
-          landlordSignature: landlordBytes, 
-        );
-
-        if (mounted) {
-          setState(() {
-            _finalSignedPdfFile = signedFile;
-            _currentDisplayPdfPath = signedFile.path;
-            _isPreviewMode = true;
-            _isLoading = false;
-          });
-        }
+        _mySignatureBytes = landlordBytes; // 缓存起来供上传使用
+        await _renderPdf(landlordSignature: landlordBytes);
+        if (mounted) setState(() => _isPreviewMode = true);
       }
     } catch (e) {
-      print(e);
       if(mounted) setState(() {
          _isLoading = false;
          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error generating preview: $e")));
@@ -151,40 +199,101 @@ class _LandlordSignContractScreenState extends State<LandlordSignContractScreen>
   void _resetToSigning() {
     setState(() {
       _sigController.clear();
+      _mySignatureBytes = null;
       _isPreviewMode = false;
-      _finalSignedPdfFile = null;
+      _isLoading = true;
     });
+    // 重置回只有租客签名的状态
+    _renderPdf(landlordSignature: null);
   }
 
+  // ==========================================
+  // 4. 最终提交 (生成双语版并上传)
+  // ==========================================
   Future<void> _uploadAndFinish() async {
-    if (_finalSignedPdfFile == null) return;
+    // 确保有签名数据
+    if (_mySignatureBytes == null) {
+      // 如果意外丢失，尝试重新从 controller 获取
+      if (_sigController.isNotEmpty) {
+        _mySignatureBytes = await _sigController.toPngBytes();
+      }
+      if (_mySignatureBytes == null) return;
+    }
+    
     setState(() => _isUploading = true);
 
     try {
-      final storageRef = FirebaseStorage.instance.ref().child('contracts/${widget.docId}_final.pdf');
-      await storageRef.putFile(_finalSignedPdfFile!);
-      final String finalUrl = await storageRef.getDownloadURL();
+      final storage = FirebaseStorage.instance;
 
+      // A. 上传房东签名图片 (用于存档)
+      await storage.ref().child('signatures/${widget.docId}_landlord.png').putData(_mySignatureBytes!);
+
+      // B. 生成并上传 【中文最终版】
+      File zhPdf = await _generateFinalPdfFile('zh', _mySignatureBytes!);
+      await storage.ref().child('contracts/${widget.docId}_final_zh.pdf').putFile(zhPdf);
+      String zhUrl = await storage.ref().child('contracts/${widget.docId}_final_zh.pdf').getDownloadURL();
+
+      // C. 生成并上传 【英文最终版】
+      File enPdf = await _generateFinalPdfFile('en', _mySignatureBytes!);
+      await storage.ref().child('contracts/${widget.docId}_final_en.pdf').putFile(enPdf);
+      String enUrl = await storage.ref().child('contracts/${widget.docId}_final_en.pdf').getDownloadURL();
+
+      // D. 决定主显示链接 (根据房东当前的语言偏好，或者默认中文)
+      String mainUrl = _currentLanguage == 'zh' ? zhUrl : enUrl;
+
+      // E. 更新 Firestore 状态
       await FirebaseFirestore.instance.collection('bookings').doc(widget.docId).update({
-        'status': 'awaiting_payment', // ✅ 状态更新为等待付款
-        'contractUrl': finalUrl, 
+        'status': 'awaiting_payment',      // 状态流转到等待付款
+        'contractUrl': mainUrl,            // 主链接
+        'contractUrlZh': zhUrl,            // 备份链接 (中文)
+        'contractUrlEn': enUrl,            // 备份链接 (英文)
         'landlordSignedAt': Timestamp.now(),
-        'isReadByTenant': false, 
+        'isReadByTenant': false,           // 通知租客
       });
 
       if (mounted) {
         Navigator.pop(context); 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Contract Finalized!"), backgroundColor: Colors.green)
+          const SnackBar(content: Text("Contract Finalized! Sent to Tenant."), backgroundColor: Colors.green)
         );
       }
     } catch (e) {
+       print("Upload error: $e");
        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Upload Error: $e")));
     } finally {
       if(mounted) setState(() => _isUploading = false);
     }
   }
 
+  // 辅助：生成特定语言的 PDF 文件对象
+  Future<File> _generateFinalPdfFile(String lang, Uint8List landlordBytes) async {
+    String startStr = ""; String endStr = ""; String paymentDay = "1";
+    if (_cachedData!['leaseStartDate'] != null) {
+       DateTime s = (_cachedData!['leaseStartDate'] as Timestamp).toDate();
+       startStr = "${s.year}-${s.month}-${s.day}"; paymentDay = "${s.day}";
+    }
+    if (_cachedData!['leaseEndDate'] != null) {
+       DateTime e = (_cachedData!['leaseEndDate'] as Timestamp).toDate();
+       endStr = "${e.year}-${e.month}-${e.day}";
+    }
+
+    return await ContractGenerator.generateAndSaveContract(
+      landlordName: _cachedData!['landlordName'],
+      tenantName: _cachedData!['tenantName'],
+      propertyAddress: _cachedData!['address'],
+      rentAmount: _cachedData!['rent'],
+      startDate: startStr,
+      endDate: endStr,
+      paymentDay: paymentDay,
+      language: lang,
+      tenantSignature: _tenantSignatureBytes, // 包含租客签名
+      landlordSignature: landlordBytes,       // 包含房东签名
+    );
+  }
+
+  // ==========================================
+  // 5. UI 构建
+  // ==========================================
   @override
   Widget build(BuildContext context) {
     const Color primaryBlue = Color(0xFF1D5DC7);
@@ -200,9 +309,28 @@ class _LandlordSignContractScreenState extends State<LandlordSignContractScreen>
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          // 语言切换按钮 (仅在非上传状态显示)
+          if (!_isUploading) 
+            Padding(
+              padding: const EdgeInsets.only(right: 16.0),
+              child: TextButton.icon(
+                onPressed: _toggleLanguage,
+                icon: const Icon(Icons.language, color: Colors.white, size: 18),
+                label: Text(_currentLanguage == 'zh' ? 'EN' : '中文', 
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                style: TextButton.styleFrom(
+                  backgroundColor: Colors.white.withOpacity(0.2),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                ),
+              ),
+            )
+        ],
       ),
       body: Stack(
         children: [
+          // 背景渐变
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -217,205 +345,222 @@ class _LandlordSignContractScreenState extends State<LandlordSignContractScreen>
           SafeArea(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator(color: Colors.white))
-                : _errorMessage != null // ✅ 1. 检查是否有错误
+                : _errorMessage != null 
                     ? Center(child: Padding(
                         padding: const EdgeInsets.all(20.0),
                         child: Text(_errorMessage!, style: const TextStyle(color: Colors.redAccent)),
                       ))
-                    : _currentDisplayPdfPath == null // ✅ 2. 核心修复：检查路径是否为空
-                        ? const Center(child: Text("Error: PDF path is missing", style: TextStyle(color: Colors.white)))
-                        : Column(
-                            children: [
-                              // --- PDF 显示区域 ---
-                              Expanded(
-                                flex: 5,
-                                child: Container(
-                                  margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(color: glassBorder),
-                                  ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(20),
-                                    child: Column(
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                                          color: Colors.white.withOpacity(0.15),
-                                          child: Row(
+                    : Column(
+                        children: [
+                          // --- PDF 显示区域 ---
+                          Expanded(
+                            flex: 5,
+                            child: Container(
+                              margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: glassBorder),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(20),
+                                child: Column(
+                                  children: [
+                                    // 状态栏条
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                                      color: Colors.black12,
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Row(
                                             children: [
                                               const Icon(Icons.description, color: Colors.white70, size: 16),
                                               const SizedBox(width: 8),
                                               Text(
                                                 _isPreviewMode 
-                                                  ? "Final Version (Both Signed)" 
-                                                  : "Current Version (Tenant Signed Only)", 
+                                                  ? (_currentLanguage == 'zh' ? "最终预览 (双签生效)" : "Final Version (Both Signed)")
+                                                  : (_currentLanguage == 'zh' ? "当前版本 (等待房东签字)" : "Draft Version (Waiting for Landlord)"),
                                                 style: const TextStyle(color: Colors.white70, fontSize: 12)
                                               ),
                                             ],
                                           ),
-                                        ),
-                                        Expanded(
-                                          // ✅ 现在这里是安全的，因为上面检查了 _currentDisplayPdfPath != null
-                                          child: PDFView(
-                                            key: Key(_currentDisplayPdfPath!), 
+                                        ],
+                                      ),
+                                    ),
+                                    // PDF 视图
+                                    Expanded(
+                                      child: _currentDisplayPdfPath != null 
+                                        ? PDFView(
+                                            key: Key(_currentDisplayPdfPath! + _currentLanguage + _isPreviewMode.toString()), 
                                             filePath: _currentDisplayPdfPath,
                                             enableSwipe: true,
                                             swipeHorizontal: false,
                                             autoSpacing: true,
                                             pageFling: true,
                                             backgroundColor: Colors.grey[200],
-                                            onError: (error) {
-                                              print("PDFView error: $error");
-                                            },
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-
-                              // --- 交互区域 ---
-                              if (_isPreviewMode)
-                                Padding(
-                                  padding: const EdgeInsets.all(16.0),
-                                  child: Column(
-                                    children: [
-                                      const Text(
-                                        "Please review the final document before activating.",
-                                        style: TextStyle(color: Colors.white70, fontSize: 14),
-                                      ),
-                                      const SizedBox(height: 16),
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: SizedBox(
-                                              height: 55,
-                                              child: OutlinedButton(
-                                                onPressed: _isUploading ? null : _resetToSigning,
-                                                style: OutlinedButton.styleFrom(
-                                                  foregroundColor: Colors.white,
-                                                  side: const BorderSide(color: Colors.white70),
-                                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                                ),
-                                                child: const Text("Re-sign"),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 16),
-                                          Expanded(
-                                            child: SizedBox(
-                                              height: 55,
-                                              child: ElevatedButton(
-                                                onPressed: _isUploading ? null : _uploadAndFinish,
-                                                style: ElevatedButton.styleFrom(
-                                                  backgroundColor: Colors.green,
-                                                  foregroundColor: Colors.white,
-                                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                                ),
-                                                child: _isUploading
-                                                    ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                                                    : const Text("Finalize", style: TextStyle(fontWeight: FontWeight.bold)),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                )
-                              else
-                                Column(
-                                  children: [
-                                    Container(
-                                      margin: const EdgeInsets.symmetric(horizontal: 16),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF1E2D33).withOpacity(0.8),
-                                        borderRadius: BorderRadius.circular(20),
-                                        border: Border.all(color: glassBorder),
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          const Padding(
-                                            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                            child: Row(
-                                              children: [
-                                                Icon(Icons.draw, color: Colors.white, size: 18),
-                                                SizedBox(width: 8),
-                                                Text("Landlord Signature", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                              ],
-                                            ),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                                            child: ClipRRect(
-                                              borderRadius: BorderRadius.circular(12),
-                                              child: Container(
-                                                height: 160,
-                                                color: Colors.white,
-                                                child: Stack(
-                                                  children: [
-                                                    const Center(
-                                                      child: Text("Sign Here",
-                                                          style: TextStyle(color: Color(0xFFEEEEEE), fontSize: 40, fontWeight: FontWeight.bold)),
-                                                    ),
-                                                    RepaintBoundary(
-                                                      child: Signature(
-                                                        controller: _sigController,
-                                                        backgroundColor: Colors.transparent,
-                                                        height: 160,
-                                                      ),
-                                                    ),
-                                                    Positioned(
-                                                      top: 8, right: 8,
-                                                      child: GestureDetector(
-                                                        onTap: () => _sigController.clear(),
-                                                        child: Container(
-                                                          padding: const EdgeInsets.all(6),
-                                                          decoration: BoxDecoration(color: Colors.grey[200], shape: BoxShape.circle),
-                                                          child: const Icon(Icons.close, size: 16, color: Colors.black54),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    
-                                    Padding(
-                                      padding: const EdgeInsets.all(16.0),
-                                      child: SizedBox(
-                                        width: double.infinity,
-                                        height: 55,
-                                        child: ElevatedButton(
-                                          onPressed: _generatePreview,
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: primaryBlue,
-                                            foregroundColor: Colors.white,
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                          ),
-                                          child: const Row(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            children: [
-                                              Icon(Icons.visibility, size: 20),
-                                              SizedBox(width: 8),
-                                              Text("Preview with Signature", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
+                                            onError: (e) => print("PDF Load Error: $e"),
+                                          )
+                                        : const Center(child: Text("Generating PDF...", style: TextStyle(color: Colors.white))),
                                     ),
                                   ],
                                 ),
-                            ],
+                              ),
+                            ),
                           ),
+
+                          // --- 底部交互区域 ---
+                          if (_isPreviewMode)
+                            // 模式 A: 确认上传
+                            Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Column(
+                                children: [
+                                  Text(
+                                    _currentLanguage == 'zh'
+                                      ? "请确认合同内容，提交后将立即生效。"
+                                      : "Please review. The contract becomes effective immediately upon submission.",
+                                    style: const TextStyle(color: Colors.white70, fontSize: 13),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: SizedBox(
+                                          height: 55,
+                                          child: OutlinedButton(
+                                            onPressed: _isUploading ? null : _resetToSigning,
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor: Colors.white,
+                                              side: const BorderSide(color: Colors.white70),
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                            ),
+                                            child: Text(_currentLanguage == 'zh' ? "重新签字" : "Re-sign"),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        child: SizedBox(
+                                          height: 55,
+                                          child: ElevatedButton(
+                                            onPressed: _isUploading ? null : _uploadAndFinish,
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.green,
+                                              foregroundColor: Colors.white,
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                            ),
+                                            child: _isUploading
+                                              ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                              : Text(
+                                                  _currentLanguage == 'zh' ? "确认并生效" : "Finalize Contract", 
+                                                  style: const TextStyle(fontWeight: FontWeight.bold)
+                                                ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            )
+                          else
+                            // 模式 B: 签字板
+                            Column(
+                              children: [
+                                Container(
+                                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF1E2D33).withOpacity(0.9),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: glassBorder),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                        child: Row(
+                                          children: [
+                                            const Icon(Icons.edit, color: Colors.white, size: 18),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              _currentLanguage == 'zh' ? "房东签字区域" : "Landlord Signature Area", 
+                                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Padding(
+                                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(12),
+                                          child: Container(
+                                            height: 160,
+                                            color: Colors.white,
+                                            child: Stack(
+                                              children: [
+                                                const Center(
+                                                  child: Text("Sign Here",
+                                                    style: TextStyle(color: Color(0xFFEEEEEE), fontSize: 40, fontWeight: FontWeight.bold)),
+                                                ),
+                                                RepaintBoundary(
+                                                  child: Signature(
+                                                    controller: _sigController,
+                                                    backgroundColor: Colors.transparent,
+                                                    height: 160,
+                                                  ),
+                                                ),
+                                                Positioned(
+                                                  top: 8, right: 8,
+                                                  child: GestureDetector(
+                                                    onTap: () => _sigController.clear(),
+                                                    child: Container(
+                                                      padding: const EdgeInsets.all(6),
+                                                      decoration: BoxDecoration(color: Colors.grey[200], shape: BoxShape.circle),
+                                                      child: const Icon(Icons.close, size: 16, color: Colors.black54),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    height: 55,
+                                    child: ElevatedButton(
+                                      onPressed: _generatePreview,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: primaryBlue,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          const Icon(Icons.visibility, size: 20),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            _currentLanguage == 'zh' ? "预览带签名合同" : "Preview with Signature", 
+                                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                        ],
+                      ),
           ),
         ],
       ),

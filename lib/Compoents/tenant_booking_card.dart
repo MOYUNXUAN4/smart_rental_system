@@ -4,9 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'glass_card.dart';
 
-// ✅ 必须导入签字页面
-
-import '../Screens/sign_contract_screen.dart';
+// ✅ 引用你的新通用签字页面 (假设在同一目录下)
+import 'shared_contract_signing_screen.dart';
 
 class TenantBookingCard extends StatelessWidget {
   final Map<String, dynamic> bookingData;
@@ -31,7 +30,7 @@ class TenantBookingCard extends StatelessWidget {
     }
   }
 
-  // ✅ 核心功能：申请弹窗 (带亮白毛玻璃日历)
+  // ✅ 核心功能：申请弹窗
   void _showApplicationDialog(BuildContext context) {
     final TextEditingController noteController = TextEditingController();
     DateTime selectedStartDate = DateTime.now();
@@ -49,10 +48,8 @@ class TenantBookingCard extends StatelessWidget {
             selectedStartDate.day
           ).subtract(const Duration(days: 1)); 
 
-          // 统一定义深蓝色
           const Color primaryBlue = Color(0xFF1D5DC7);
 
-          // 输入框样式定义
           InputDecoration getBoxDecoration(String label, IconData icon) {
             return InputDecoration(
               labelText: label,
@@ -62,18 +59,9 @@ class TenantBookingCard extends StatelessWidget {
               fillColor: Colors.white.withOpacity(0.12),
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(20), 
-                borderSide: BorderSide.none,
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(20),
-                borderSide: BorderSide.none,
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(20),
-                borderSide: BorderSide(color: Colors.white.withOpacity(0.6)),
-              ),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: Colors.white.withOpacity(0.6))),
             );
           }
 
@@ -87,28 +75,19 @@ class TenantBookingCard extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    // 弹窗本身的背景：深色渐变
                     gradient: LinearGradient(
-                      colors: [
-                        Colors.white.withOpacity(0.15),
-                        Colors.white.withOpacity(0.05),
-                      ],
+                      colors: [Colors.white.withOpacity(0.15), Colors.white.withOpacity(0.05)],
                       begin: Alignment.topLeft, end: Alignment.bottomRight,
                     ),
                     borderRadius: BorderRadius.circular(25),
                     border: Border.all(color: Colors.white.withOpacity(0.3), width: 1.2),
-                    boxShadow: [
-                      BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 30, spreadRadius: 5),
-                    ],
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 30, spreadRadius: 5)],
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        "Rental Application", 
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 0.5)
-                      ),
+                      const Text("Rental Application", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 0.5)),
                       const SizedBox(height: 20),
                       
                       // --- 1. 开始日期选择 ---
@@ -119,43 +98,31 @@ class TenantBookingCard extends StatelessWidget {
                             initialDate: selectedStartDate,
                             firstDate: DateTime.now(),
                             lastDate: DateTime.now().add(const Duration(days: 365)),
-                            // ✅✅✅ 日历弹窗主题：亮白毛玻璃 + 深蓝选中 ✅✅✅
                             builder: (context, child) {
                               return Theme(
                                 data: ThemeData.light().copyWith(
-                                  // 颜色方案：确保文字是深色，选中是你的蓝色
                                   colorScheme: const ColorScheme.light(
-                                    primary: primaryBlue, // 选中圆圈颜色 (深蓝)
-                                    onPrimary: Colors.white, // 选中文字颜色
-                                    surface: Colors.transparent, // 背景透明，交给下面的 Decor 处理
-                                    onSurface: Color(0xFF153a44), // 默认文字颜色 (深色)
+                                    primary: primaryBlue, onPrimary: Colors.white,
+                                    surface: Colors.transparent, onSurface: Color(0xFF153a44),
                                   ),
-                                  // 确保 Dialog 背景透明
                                   dialogBackgroundColor: Colors.transparent,
                                 ),
                                 child: Stack(
                                   alignment: Alignment.center,
                                   children: [
-                                    // 自定义日历容器
                                     Container(
                                       margin: const EdgeInsets.symmetric(horizontal: 32, vertical: 60),
                                       decoration: BoxDecoration(
-                                        // ✅ 亮白毛玻璃背景
                                         color: Colors.white.withOpacity(0.92), 
                                         borderRadius: BorderRadius.circular(24),
-                                        boxShadow: [
-                                          BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 25, spreadRadius: 2)
-                                        ],
+                                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 25, spreadRadius: 2)],
                                         border: Border.all(color: Colors.white, width: 1),
                                       ),
                                       child: ClipRRect(
                                         borderRadius: BorderRadius.circular(24),
                                         child: BackdropFilter(
                                           filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                                          child: Padding(
-                                            padding: const EdgeInsets.all(8.0),
-                                            child: child ?? const SizedBox(),
-                                          ),
+                                          child: Padding(padding: const EdgeInsets.all(8.0), child: child ?? const SizedBox()),
                                         ),
                                       ),
                                     ),
@@ -164,17 +131,11 @@ class TenantBookingCard extends StatelessWidget {
                               );
                             }
                           );
-                          if (picked != null) {
-                            setState(() => selectedStartDate = picked); 
-                          }
+                          if (picked != null) setState(() => selectedStartDate = picked); 
                         },
-                        // 触发器外观：保持你喜欢的 PropertyTextFormField 风格
                         child: InputDecorator(
                           decoration: getBoxDecoration('Start Date', Icons.calendar_today),
-                          child: Text(
-                            DateFormat('dd/MM/yyyy').format(selectedStartDate),
-                            style: const TextStyle(color: Colors.white, fontSize: 15),
-                          ),
+                          child: Text(DateFormat('dd/MM/yyyy').format(selectedStartDate), style: const TextStyle(color: Colors.white, fontSize: 15)),
                         ),
                       ),
 
@@ -186,20 +147,17 @@ class TenantBookingCard extends StatelessWidget {
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<int>(
                             value: selectedDurationMonths,
-                            dropdownColor: const Color(0xFF295a68), // 深色菜单背景
+                            dropdownColor: const Color(0xFF295a68),
                             icon: const Icon(Icons.arrow_drop_down, color: Colors.white70),
                             style: const TextStyle(color: Colors.white, fontSize: 15),
-                            isExpanded: true,
-                            isDense: true,
+                            isExpanded: true, isDense: true,
                             items: [6, 12, 24, 36].map((months) {
                               return DropdownMenuItem(
                                 value: months,
                                 child: Text("$months Months (${(months/12).toStringAsFixed(1)} Years)"),
                               );
                             }).toList(),
-                            onChanged: (val) {
-                              if (val != null) setState(() => selectedDurationMonths = val);
-                            },
+                            onChanged: (val) { if (val != null) setState(() => selectedDurationMonths = val); },
                           ),
                         ),
                       ),
@@ -211,11 +169,8 @@ class TenantBookingCard extends StatelessWidget {
                           children: [
                             Icon(Icons.event_available, size: 14, color: Colors.blue[200]),
                             const SizedBox(width: 6),
-                            // ✅ 字体颜色：深蓝色
-                            Text(
-                              "Contract Ends: ${DateFormat('dd/MM/yyyy').format(endDate)}",
-                              style: const TextStyle(color: Color(0xFF4FC3F7), fontSize: 13, fontWeight: FontWeight.w600),
-                            ),
+                            Text("Contract Ends: ${DateFormat('dd/MM/yyyy').format(endDate)}", 
+                              style: const TextStyle(color: Color(0xFF4FC3F7), fontSize: 13, fontWeight: FontWeight.w600)),
                           ],
                         ),
                       ),
@@ -227,9 +182,7 @@ class TenantBookingCard extends StatelessWidget {
                         controller: noteController,
                         style: const TextStyle(color: Colors.white),
                         cursorColor: Colors.white,
-                        decoration: getBoxDecoration('Note to Landlord (Optional)', Icons.edit_note).copyWith(
-                          alignLabelWithHint: true,
-                        ),
+                        decoration: getBoxDecoration('Note to Landlord (Optional)', Icons.edit_note).copyWith(alignLabelWithHint: true),
                         maxLines: 2,
                       ),
                       const SizedBox(height: 24),
@@ -238,17 +191,12 @@ class TenantBookingCard extends StatelessWidget {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx), 
-                            child: const Text("Cancel", style: TextStyle(color: Colors.white70))
-                          ),
+                          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel", style: TextStyle(color: Colors.white70))),
                           const SizedBox(width: 10),
                           ElevatedButton(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: primaryBlue,
-                              foregroundColor: Colors.white,
-                              shadowColor: primaryBlue.withOpacity(0.5),
-                              elevation: 5,
+                              backgroundColor: primaryBlue, foregroundColor: Colors.white,
+                              shadowColor: primaryBlue.withOpacity(0.5), elevation: 5,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                             ),
@@ -256,22 +204,15 @@ class TenantBookingCard extends StatelessWidget {
                               Navigator.pop(ctx); 
                               if (docId == null) return;
                               try {
-                                await FirebaseFirestore.instance
-                                    .collection('bookings')
-                                    .doc(docId)
-                                    .update({
-                                      'status': 'application_pending',
-                                      'applicationNote': noteController.text.trim(),
-                                      'appliedAt': Timestamp.now(),
-                                      'leaseStartDate': Timestamp.fromDate(selectedStartDate),
-                                      'leaseEndDate': Timestamp.fromDate(endDate),
-                                    });
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text("Application Sent!"), backgroundColor: Colors.green),
-                                );
-                              } catch (e) {
-                                print(e);
-                              }
+                                await FirebaseFirestore.instance.collection('bookings').doc(docId).update({
+                                    'status': 'application_pending',
+                                    'applicationNote': noteController.text.trim(),
+                                    'appliedAt': Timestamp.now(),
+                                    'leaseStartDate': Timestamp.fromDate(selectedStartDate),
+                                    'leaseEndDate': Timestamp.fromDate(endDate),
+                                });
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Application Sent!"), backgroundColor: Colors.green));
+                              } catch (e) { print(e); }
                             },
                             child: const Text("Submit Application", style: TextStyle(fontWeight: FontWeight.bold)),
                           ),
@@ -336,10 +277,7 @@ class TenantBookingCard extends StatelessWidget {
                       children: [
                         Icon(currentStatusIcon, color: currentStatusColor, size: 10),
                         const SizedBox(width: 4),
-                        Text(
-                          displayStatus,
-                          style: TextStyle(color: currentStatusColor, fontWeight: FontWeight.w600, fontSize: 10),
-                        ),
+                        Text(displayStatus, style: TextStyle(color: currentStatusColor, fontWeight: FontWeight.w600, fontSize: 10)),
                       ],
                     ),
                   ),
@@ -401,6 +339,7 @@ class TenantBookingCard extends StatelessWidget {
                 ),
               ],
 
+              // ✅✅✅ 修改这里：跳转到 SharedContractSigningScreen ✅✅✅
               if (status == 'ready_to_sign') ...[
                  const SizedBox(height: 12),
                  SizedBox(
@@ -408,18 +347,19 @@ class TenantBookingCard extends StatelessWidget {
                   height: 40,
                   child: ElevatedButton.icon(
                     onPressed: () {
-                      if (docId != null && bookingData['contractUrl'] != null) {
+                      if (docId != null) {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => SignContractScreen(
+                            // ✅ 使用通用组件，isLandlord = false
+                            builder: (context) => SharedContractSigningScreen(
                               docId: docId!,
-                              contractUrl: bookingData['contractUrl'], 
+                              isLandlord: false, 
                             ),
                           ),
                         );
                       } else {
-                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Error: Contract URL missing or Doc ID missing")));
+                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Error: Doc ID missing")));
                       }
                     },
                     icon: const Icon(Icons.edit_document, size: 16),

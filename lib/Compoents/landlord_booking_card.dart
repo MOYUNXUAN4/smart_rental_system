@@ -4,9 +4,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:intl/intl.dart';
 import 'glass_card.dart'; 
-// 记得引入你刚才新建的房东签字页面
-import '../screens/landlord_sign_contract_screen.dart'; 
 import 'contract_generator.dart'; 
+
+// ✅ Correct Import: Point to the specialized Landlord Sign Screen
+import '../screens/landlord_sign_contract_screen.dart'; 
 
 class LandlordBookingCard extends StatelessWidget {
   final Map<String, dynamic> bookingData;
@@ -39,6 +40,7 @@ class LandlordBookingCard extends StatelessWidget {
     if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Status updated to $newStatus")));
   }
 
+  // Generate Initial Contract (When Landlord clicks Approve & Contract)
   Future<void> _handleReleaseContract(BuildContext context) async {
     final String propertyId = bookingData['propertyId'];
     final String tenantUid = bookingData['tenantUid'];
@@ -77,6 +79,7 @@ class LandlordBookingCard extends StatelessWidget {
       final String endStr = DateFormat('yyyy-MM-dd').format(end);
       final String paymentDay = "${start.day}"; 
 
+      // Generate Initial PDF (Draft for Tenant to see)
       final File generatedPdf = await ContractGenerator.generateAndSaveContract(
         landlordName: landlordName, 
         tenantName: tenantName, 
@@ -85,10 +88,10 @@ class LandlordBookingCard extends StatelessWidget {
         startDate: startStr, 
         endDate: endStr, 
         paymentDay: paymentDay, 
-        language: 'en', 
+        language: 'zh', // Default language
       );
 
-      final String fileName = 'contracts/final_${docId}_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final String fileName = 'contracts/initial_${docId}_${DateTime.now().millisecondsSinceEpoch}.pdf';
       final ref = FirebaseStorage.instance.ref().child(fileName);
       await ref.putFile(generatedPdf);
       final String newContractUrl = await ref.getDownloadURL(); 
@@ -104,7 +107,7 @@ class LandlordBookingCard extends StatelessWidget {
       if (context.mounted) {
         Navigator.pop(context); 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Contract Generated & Sent!"), backgroundColor: Color(0xFF1D5DC7)),
+          const SnackBar(content: Text("Contract Sent to Tenant!"), backgroundColor: Color(0xFF1D5DC7)),
         );
       }
     } catch (e) {
@@ -141,7 +144,7 @@ class LandlordBookingCard extends StatelessWidget {
     else if (status == 'application_pending') { statusColor = Colors.amber; statusText = "APP PENDING"; }
     else if (status == 'ready_to_sign') { statusColor = Colors.cyanAccent; }
     else if (status == 'rejected') { statusColor = Colors.redAccent; }
-    else if (status == 'awaiting_payment') { statusColor = Colors.purpleAccent; } // 新增状态颜色
+    else if (status == 'awaiting_payment') { statusColor = Colors.purpleAccent; } 
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0), 
@@ -262,7 +265,7 @@ class LandlordBookingCard extends StatelessWidget {
                 ),
               ],
 
-              // 按钮逻辑区
+              // Button Logic
               if (status == 'pending') ...[
                 const SizedBox(height: 8),
                 Row(
@@ -301,17 +304,19 @@ class LandlordBookingCard extends StatelessWidget {
                 ),
               ],
 
-              // ✅✅✅ 房东复签按钮 ✅✅✅
+              // ✅✅✅ LANDLORD COUNTER SIGN BUTTON ✅✅✅
               if (status == 'tenant_signed') ...[
                 const SizedBox(height: 8),
                 SizedBox(
                   width: double.infinity,
-                  child: _buildSolidBtn("Counter Sign", Colors.teal, () {
-                    // 跳转到房东签字页面
+                  child: _buildSolidBtn("Counter Sign (Review)", Colors.teal, () {
+                    // Navigate to the Landlord-specific signing screen
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => LandlordSignContractScreen(docId: docId),
+                        builder: (context) => LandlordSignContractScreen(
+                          docId: docId, // Pass the Document ID
+                        ),
                       ),
                     );
                   }),
