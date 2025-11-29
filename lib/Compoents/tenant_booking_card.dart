@@ -26,8 +26,9 @@ class TenantBookingCard extends StatefulWidget {
 }
 
 class _TenantBookingCardState extends State<TenantBookingCard> with SingleTickerProviderStateMixin {
-  bool _isExpanded = false; // 控制折叠
+  bool _isExpanded = false; // 控制折叠状态
 
+  // 获取房产名称
   Future<String> _getPropertyName(String propertyId) async {
     try {
       final doc = await FirebaseFirestore.instance.collection('properties').doc(propertyId).get();
@@ -35,6 +36,7 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
     } catch (e) { return '...'; }
   }
 
+  // 获取房东名称
   Future<String> _getLandlordName(String? uid) async {
     if (uid == null) return "Unknown";
     try {
@@ -43,15 +45,170 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
     } catch (e) { return '...'; }
   }
 
+  // 支付逻辑 (预留)
   void _handlePayment(BuildContext context) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Payment Gateway Coming Soon"), backgroundColor: Color(0xFF00B09B)),
     );
   }
 
+  // ✅ 完整的申请弹窗逻辑 (恢复了日期选择和租期功能)
   void _showApplicationDialog(BuildContext context) {
-    // (保留之前的逻辑，这里仅示意)
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Application Dialog")));
+    final TextEditingController noteController = TextEditingController();
+    DateTime selectedStartDate = DateTime.now();
+    int selectedDurationMonths = 12; // 默认租期
+
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.8), // 深色背景突出弹窗
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setState) {
+          
+          // 自动计算结束日期
+          final DateTime endDate = DateTime(
+            selectedStartDate.year, 
+            selectedStartDate.month + selectedDurationMonths, 
+            selectedStartDate.day
+          ).subtract(const Duration(days: 1)); 
+
+          const Color primaryBlue = Color(0xFF1D5DC7);
+
+          return Dialog(
+            backgroundColor: const Color(0xFF2C3E50), // 深色背景
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            insetPadding: const EdgeInsets.all(20),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("📝 Rental Application", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
+                  const SizedBox(height: 16),
+                  
+                  // 1. Start Date
+                  const Text("Start Date", style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  GestureDetector(
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: selectedStartDate,
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                      );
+                      if (picked != null) setState(() => selectedStartDate = picked); 
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.calendar_today, color: Colors.white70, size: 16),
+                          const SizedBox(width: 8),
+                          Text(DateFormat('yyyy-MM-dd').format(selectedStartDate), style: const TextStyle(color: Colors.white, fontSize: 14)),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // 2. Lease Duration
+                  const Text("Duration", style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<int>(
+                        value: selectedDurationMonths,
+                        dropdownColor: const Color(0xFF34495E),
+                        icon: const Icon(Icons.arrow_drop_down, color: Colors.white70),
+                        isExpanded: true,
+                        style: const TextStyle(color: Colors.white, fontSize: 14),
+                        items: [6, 12, 24, 36].map((months) {
+                          return DropdownMenuItem(value: months, child: Text("$months Months"));
+                        }).toList(),
+                        onChanged: (val) { if (val != null) setState(() => selectedDurationMonths = val); },
+                      ),
+                    ),
+                  ),
+                  
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6.0),
+                    child: Text("Ends: ${DateFormat('yyyy-MM-dd').format(endDate)}", style: const TextStyle(color: Colors.greenAccent, fontSize: 11)),
+                  ),
+
+                  const SizedBox(height: 12),
+                  
+                  // 3. Note
+                  const Text("Note to Landlord", style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: noteController,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: "Optional...",
+                      hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
+                      filled: true,
+                      fillColor: Colors.white.withOpacity(0.1),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // 4. Buttons
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Colors.white30),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          child: const Text("Cancel", style: TextStyle(color: Colors.white)),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () async {
+                            Navigator.pop(ctx); 
+                            if (widget.docId == null) return;
+                            try {
+                              await FirebaseFirestore.instance.collection('bookings').doc(widget.docId).update({
+                                  'status': 'application_pending',
+                                  'applicationNote': noteController.text.trim(),
+                                  'appliedAt': Timestamp.now(),
+                                  'leaseStartDate': Timestamp.fromDate(selectedStartDate),
+                                  'leaseEndDate': Timestamp.fromDate(endDate),
+                              });
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Application Sent!"), backgroundColor: Colors.green));
+                            } catch (e) { print(e); }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: primaryBlue,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          child: const Text("Submit", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
+                  )
+                ],
+              ),
+            ),
+          );
+        }
+      ),
+    );
   }
 
   @override
@@ -77,7 +234,6 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
     }
 
     return Padding(
-      // 外部间距也调小
       padding: const EdgeInsets.only(bottom: 6.0), 
       child: GlassCard(
         child: AnimatedSize(
@@ -85,13 +241,13 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
           curve: Curves.fastOutSlowIn,
           alignment: Alignment.topCenter,
           child: Container(
-            // ✅✅✅ 极度紧凑的内部 Padding (5.0) ✅✅✅
+            // ✅ 保持你要求的 UI：极度紧凑内部 Padding (5.0)
             padding: const EdgeInsets.all(5.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // ==========================================
-                // 1. 核心栏 (始终显示): 房源名 | 状态 | 展开按钮
+                // 1. 核心栏 (Header)
                 // ==========================================
                 Row(
                   children: [
@@ -125,7 +281,7 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
                       ),
                     ),
                     
-                    // 折叠箭头 (点击区域放大)
+                    // 折叠箭头
                     GestureDetector(
                       onTap: () => setState(() => _isExpanded = !_isExpanded),
                       child: Container(
@@ -138,20 +294,19 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
                 ),
 
                 // ==========================================
-                // 2. 关键操作栏 (始终显示，不折叠)
+                // 2. 关键操作栏 (Action Bar) - 始终显示
                 // ==========================================
-                // 只有当有重要操作时才显示这一栏，节省空间
                 if (status == 'approved' || status == 'ready_to_sign' || status == 'awaiting_payment') ...[
                   const SizedBox(height: 5),
                   _buildActionBar(context, status),
                 ],
 
                 // ==========================================
-                // 3. 折叠详情区 (分类显示)
+                // 3. 折叠详情区 (Details)
                 // ==========================================
                 if (_isExpanded) ...[
                   const SizedBox(height: 5),
-                  // 分类 A: 会面信息
+                  // 会面信息
                   _buildSectionContainer(
                     icon: Icons.calendar_today,
                     title: "Appointment",
@@ -165,7 +320,7 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
                   ),
                   const SizedBox(height: 4),
                   
-                  // 分类 B: 人员信息
+                  // 房东信息
                   _buildSectionContainer(
                     icon: Icons.person_outline,
                     title: "Landlord Info",
@@ -178,7 +333,7 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
                     ),
                   ),
 
-                  // 分类 C: 备注 (如果有)
+                  // 备注
                   if (widget.bookingData['applicationNote'] != null) ...[
                     const SizedBox(height: 4),
                     _buildSectionContainer(
@@ -200,15 +355,14 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
     );
   }
 
-  // --- 辅助构建方法 ---
+  // --- UI 组件构建方法 ---
 
-  // 构建分类容器 (毛玻璃背景)
   Widget _buildSectionContainer({required IconData icon, required String title, required Widget content}) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.03), // 极淡的背景
+        color: Colors.white.withOpacity(0.03),
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: Colors.white.withOpacity(0.08)),
       ),
@@ -229,11 +383,10 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
     );
   }
 
-  // 构建操作栏 (根据状态返回不同的按钮组合)
   Widget _buildActionBar(BuildContext context, String status) {
     if (status == 'approved') {
       return SizedBox(
-        height: 28, // 极低高度
+        height: 28, 
         child: _buildGradientButton("Apply Now", const [Color(0xFF1D5DC7), Color(0xFF1E88E5)], () => _showApplicationDialog(context)),
       );
     } 
@@ -277,7 +430,6 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
     return const SizedBox.shrink();
   }
 
-  // 磨砂按钮 (View Contract)
   Widget _buildGlassyButton(String text, VoidCallback onTap) {
     return Container(
       decoration: BoxDecoration(
@@ -298,7 +450,6 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
     );
   }
 
-  // 渐变按钮 (Pay / Sign)
   Widget _buildGradientButton(String text, List<Color> colors, VoidCallback onTap) {
     return Container(
       decoration: BoxDecoration(

@@ -1,8 +1,13 @@
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../screens/landlord_sign_contract_screen.dart';
+// ✅ 引入房东签字页面
+import '../Screens/landlord_sign_contract_screen.dart';
+import 'contract_generator.dart';
 import 'glass_card.dart'; 
 
 class LandlordBookingCard extends StatelessWidget {
@@ -36,10 +41,84 @@ class LandlordBookingCard extends StatelessWidget {
     if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Updated to $newStatus")));
   }
 
+  // ✅ 完整的生成合同逻辑 (Approve & Contract)
   Future<void> _handleReleaseContract(BuildContext context) async {
-    // ... (保持原有的生成合同逻辑，为节省篇幅略去，代码完全一致) ...
-    // 如果你需要我完整贴出这部分逻辑，请告诉我，我默认你之前的逻辑是好的
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Contract Generation Logic Triggered")));
+    final String propertyId = bookingData['propertyId'];
+    final String tenantUid = bookingData['tenantUid'];
+    final String? landlordUid = bookingData['landlordUid']; 
+    
+    final Timestamp? startDateTs = bookingData['leaseStartDate'];
+    final Timestamp? endDateTs = bookingData['leaseEndDate'];
+
+    if (startDateTs == null || endDateTs == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Error: Lease dates missing!")));
+      return;
+    }
+
+    // 显示加载中
+    showDialog(
+      context: context, 
+      barrierDismissible: false,
+      builder: (ctx) => const Center(child: CircularProgressIndicator(color: Colors.white))
+    );
+
+    try {
+      final propertyDoc = await FirebaseFirestore.instance.collection('properties').doc(propertyId).get();
+      final propertyData = propertyDoc.data() as Map<String, dynamic>;
+      
+      String landlordName = "Landlord"; 
+      if (landlordUid != null) {
+          final uDoc = await FirebaseFirestore.instance.collection('users').doc(landlordUid).get();
+          if (uDoc.exists) landlordName = uDoc.data()?['name'] ?? "Landlord";
+      }
+
+      final tenantDoc = await FirebaseFirestore.instance.collection('users').doc(tenantUid).get();
+      final String tenantName = tenantDoc.data()?['name'] ?? "Tenant";
+
+      final start = startDateTs.toDate();
+      final end = endDateTs.toDate();
+      final String startStr = DateFormat('yyyy-MM-dd').format(start);
+      final String endStr = DateFormat('yyyy-MM-dd').format(end);
+      final String paymentDay = "${start.day}"; 
+
+      // 生成初始 PDF
+      final File generatedPdf = await ContractGenerator.generateAndSaveContract(
+        landlordName: landlordName, 
+        tenantName: tenantName, 
+        propertyAddress: "${propertyData['unitNumber'] ?? ''}, ${propertyData['communityName'] ?? ''}", 
+        rentAmount: (propertyData['price'] ?? 0).toString(),
+        startDate: startStr, 
+        endDate: endStr, 
+        paymentDay: paymentDay, 
+        language: 'zh', 
+      );
+
+      final String fileName = 'contracts/initial_${docId}_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final ref = FirebaseStorage.instance.ref().child(fileName);
+      await ref.putFile(generatedPdf);
+      final String newContractUrl = await ref.getDownloadURL(); 
+
+      // 更新状态为 ready_to_sign
+      await FirebaseFirestore.instance.collection('bookings').doc(docId).update({
+        'status': 'ready_to_sign', 
+        'contractUrl': newContractUrl, 
+        'contractReleasedAt': Timestamp.now(),
+        'monthlyPaymentDay': paymentDay, 
+        'isReadByTenant': false, 
+      });
+
+      if (context.mounted) {
+        Navigator.pop(context); 
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Contract Sent to Tenant!"), backgroundColor: Color(0xFF1D5DC7)),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.pop(context); 
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+      }
+    }
   }
 
   @override
@@ -47,11 +126,11 @@ class LandlordBookingCard extends StatelessWidget {
     final String status = bookingData['status'] ?? 'pending';
     final Timestamp meetingTimestamp = bookingData['meetingTime'];
     final String meetingPoint = bookingData['meetingPoint'] ?? '';
-    final String formattedTime = DateFormat('MM/dd HH:mm').format(meetingTimestamp.toDate()); // 缩短日期
+    final String formattedTime = DateFormat('MM/dd HH:mm').format(meetingTimestamp.toDate()); 
     final String tenantUid = bookingData['tenantUid'];
     final String propertyId = bookingData['propertyId'];
 
-    // 状态样式
+    // 状态样式逻辑
     Color statusColor = Colors.white70;
     String statusText = status.toUpperCase().replaceAll('_', ' ');
     
@@ -63,10 +142,10 @@ class LandlordBookingCard extends StatelessWidget {
     else if (status == 'awaiting_payment') { statusColor = Colors.purpleAccent; } 
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6.0), // 极小外部间距
+      padding: const EdgeInsets.only(bottom: 6.0), 
       child: GlassCard(
         child: Padding(
-          // ✅✅✅ 极度紧凑的内部 Padding ✅✅✅
+          // ✅ 极度紧凑内部 Padding
           padding: const EdgeInsets.all(5.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -102,7 +181,7 @@ class LandlordBookingCard extends StatelessWidget {
               
               const SizedBox(height: 4),
 
-              // 2. Info Row (时间 | 租客 | 地点) - 使用图标节省空间
+              // 2. Info Row (时间 | 租客 | 地点)
               Row(
                 children: [
                   _buildIconText(Icons.access_time, formattedTime),
