@@ -1,4 +1,3 @@
-// lib/Screens/home_screen.dart
 import 'dart:math';
 import 'dart:ui';
 
@@ -8,8 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:smart_rental_system/Compoents/property_card.dart';
 // 导入其他屏幕
 import 'package:smart_rental_system/Screens/property_list_screen.dart';
-// ✅ 导入搜索页面
-import 'package:smart_rental_system/Screens/search_screen.dart'; // 如果报错，请检查是否需要改为 'Screens'
+import 'package:smart_rental_system/Screens/search_screen.dart';
 import 'package:smart_rental_system/screens/favorite_screen.dart';
 import 'package:smart_rental_system/screens/landlord_inbox_screen.dart';
 import 'package:smart_rental_system/screens/property_detail_screen.dart';
@@ -22,9 +20,6 @@ import 'landlord_bookings_screen.dart';
 import 'landlord_screen.dart';
 import 'tenant_bookings_screen.dart';
 import 'tenant_screen.dart';
-// lib/Screens/home_screen.dart
-
-
 
 class HomeScreen extends StatefulWidget {
   final String userRole;
@@ -140,9 +135,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ===============================================================
-// _HomeContent
-// ===============================================================
 class _HomeContent extends StatefulWidget {
   final String userRole;
   const _HomeContent({required this.userRole});
@@ -167,16 +159,31 @@ class _HomeContentState extends State<_HomeContent> {
       _userStream = FirebaseFirestore.instance.collection('users').doc(_uid).snapshots();
 
       if (isLandlord) {
+        // ✅ 房东通知逻辑 (修改版)
+        // 只有当 isReadByLandlord == false (未读) 时才显示红点
         _notificationStream = FirebaseFirestore.instance
             .collection('bookings')
             .where('landlordUid', isEqualTo: _uid)
-            .where('status', isEqualTo: 'pending')
+            .where('status', whereIn: [
+              'pending',              
+              'application_pending',  
+              'tenant_signed',        
+              'cancellation_pending'  
+            ])
+            .where('isReadByLandlord', isEqualTo: false) // 🔥 新增：只看未读
             .snapshots();
       } else {
+        // ✅ 租客通知逻辑
         _notificationStream = FirebaseFirestore.instance
             .collection('bookings')
             .where('tenantUid', isEqualTo: _uid)
-            .where('status', whereIn: ['approved', 'rejected'])
+            .where('status', whereIn: [
+              'approved',          
+              'rejected',          
+              'ready_to_sign',     
+              'awaiting_payment',  
+              'cancelled'          
+            ])
             .where('isReadByTenant', isEqualTo: false)
             .snapshots();
       }
@@ -189,15 +196,9 @@ class _HomeContentState extends State<_HomeContent> {
   
   void _goToAccount() {
     if (isLandlord) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const LandlordScreen()),
-      );
+      Navigator.push(context, MaterialPageRoute(builder: (context) => const LandlordScreen()));
     } else {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const TenantScreen()),
-      );
+      Navigator.push(context, MaterialPageRoute(builder: (context) => const TenantScreen()));
     }
   }
 
@@ -208,10 +209,7 @@ class _HomeContentState extends State<_HomeContent> {
     context.findAncestorStateOfType<_HomeScreenState>()?._onBottomNavTap(2);
   }
   void _goToLandlordInbox() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const LandlordInboxScreen()),
-    );
+    Navigator.push(context, MaterialPageRoute(builder: (context) => const LandlordInboxScreen()));
   }
 
   void _goToLandlordBookings() {
@@ -222,12 +220,8 @@ class _HomeContentState extends State<_HomeContent> {
     Navigator.push(context, MaterialPageRoute(builder: (context) => const TenantBookingsScreen()));
   }
 
-  // ✅ 跳转到 SearchScreen
   void _goToSearch() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const SearchScreen()),
-    );
+    Navigator.push(context, MaterialPageRoute(builder: (context) => const SearchScreen()));
   }
 
   @override
@@ -252,6 +246,11 @@ class _HomeContentState extends State<_HomeContent> {
             StreamBuilder<QuerySnapshot>(
               stream: _notificationStream, 
               builder: (context, snapshot) {
+                // 简单的调试信息，如果出错了会在控制台看到
+                if (snapshot.hasError) {
+                   print("🛑 Notification Error: ${snapshot.error}");
+                }
+
                 int count = 0;
                 if (snapshot.hasData) {
                   count = snapshot.data!.docs.length; 
@@ -346,9 +345,6 @@ class _HomeContentState extends State<_HomeContent> {
                     ),
                   ),
                 ),
-                // =====================================================
-                // ✅ 修复：整个搜索栏区域可点击跳转
-                // =====================================================
                 Positioned(
                   left: 24,
                   right: 24,
@@ -357,9 +353,9 @@ class _HomeContentState extends State<_HomeContent> {
                     borderRadius: BorderRadius.circular(30.0),
                     child: BackdropFilter(
                       filter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
-                      child: GestureDetector( // 1. 外层包裹 GestureDetector
-                        onTap: _goToSearch,   // 2. 确保点击整个区域都跳转
-                        behavior: HitTestBehavior.opaque, // 3. 确保点击空白处也生效
+                      child: GestureDetector(
+                        onTap: _goToSearch,
+                        behavior: HitTestBehavior.opaque,
                         child: Container(
                           height: searchBarHeight,
                           padding: const EdgeInsets.symmetric(horizontal: 12.0),
@@ -374,7 +370,6 @@ class _HomeContentState extends State<_HomeContent> {
                               const Icon(Icons.search, color: Colors.white70),
                               const SizedBox(width: 8),
                               Expanded(
-                                // 4. 忽略输入框的点击，透传给外层 GestureDetector
                                 child: IgnorePointer( 
                                   child: TextField(
                                     readOnly: true, 
@@ -393,7 +388,7 @@ class _HomeContentState extends State<_HomeContent> {
                               Container(
                                 margin: const EdgeInsets.only(right: 6),
                                 child: ElevatedButton(
-                                  onPressed: _goToSearch, // 5. 按钮也可以触发
+                                  onPressed: _goToSearch,
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: const Color(0xFF1D5DC7),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -410,7 +405,6 @@ class _HomeContentState extends State<_HomeContent> {
                     ),
                   ),
                 ),
-                // =====================================================
               ],
             ),
           ),
@@ -423,7 +417,6 @@ class _HomeContentState extends State<_HomeContent> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  // ✅ 圆形按钮也可以触发 _goToSearch
                   _buildActionButton(context, Icons.search, "Search", _goToSearch),
                   _buildActionButton(context, Icons.list_alt, "List", _goToList), 
                   isLandlord
@@ -523,14 +516,12 @@ class _HomeContentState extends State<_HomeContent> {
                           fontWeight: FontWeight.bold,
                           color: Colors.white)
                     ),
-                    Icon(Icons.star, color: Colors.yellow[700]),
                   ],
                 ),
               ),
               PropertyCard(
                 propertyData: propertyData,
                 propertyId: propertyId,
-                // ✅ 关键修复：添加前缀 'home_recommend'，防止 Hero Tag 冲突
                 heroTagPrefix: 'home_recommend',
                 onTap: () {
                   Navigator.push(

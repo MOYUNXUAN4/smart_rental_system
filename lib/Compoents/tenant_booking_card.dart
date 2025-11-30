@@ -4,10 +4,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-// ✅ 引入相关页面 (请根据您实际的文件名调整路径)
+// ✅ 引入相关页面
 import '../Screens/final_contract_viewer_screen.dart';
 import 'glass_card.dart';
-import 'shared_contract_signing_screen.dart'; // 确认这里引用的文件名正确
+import 'shared_contract_signing_screen.dart'; 
 
 class TenantBookingCard extends StatefulWidget {
   final Map<String, dynamic> bookingData;
@@ -89,7 +89,6 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
                   const SizedBox(height: 24),
                   Row(
                     children: [
-                      // Cancel 按钮
                       Expanded(
                         child: OutlinedButton(
                           onPressed: () => Navigator.pop(ctx, false),
@@ -103,7 +102,6 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
                         ),
                       ),
                       const SizedBox(width: 16),
-                      // Confirm 按钮 (红色渐变)
                       Expanded(
                         child: Container(
                           decoration: BoxDecoration(
@@ -134,12 +132,36 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
     );
   }
 
-  // 🔥🔥🔥 核心 2：高级毛玻璃横幅构建器 🔥🔥🔥
+  // 🔥🔥🔥 核心 2：租客主动请求撤销 (新增) 🔥🔥🔥
+  Future<void> _requestDeletion() async {
+    if (widget.docId == null) return;
+
+    final bool? confirm = await _showConfirmDialog(
+      title: "Cancel Request?",
+      content: "Are you sure you want to cancel this booking? The landlord will be notified.",
+      confirmText: "Yes, Cancel",
+    );
+
+    if (confirm == true) {
+      await FirebaseFirestore.instance.collection('bookings').doc(widget.docId).update({
+        'deletionRequest': 'pending',
+        'deletionRequestedBy': 'tenant',
+        
+        // 🔥🔥 关键：强制改变状态，房东首页才能收到红点！🔥🔥
+        'status': 'cancellation_pending', 
+        'isReadByLandlord': false, 
+      });
+      
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Cancellation request sent.")));
+    }
+  }
+
+  // 🔥🔥🔥 核心 3：高级毛玻璃横幅构建器 🔥🔥🔥
   Widget _buildGlassBanner({
     required BuildContext context,
     required String text,
     required IconData icon,
-    required Color color, // 主题色
+    required Color color, 
     required VoidCallback onKeep,
     required VoidCallback onConfirm,
   }) {
@@ -153,12 +175,11 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
           child: Container(
             padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.08), // 极淡背景
+              color: color.withOpacity(0.08), 
               border: Border(bottom: BorderSide(color: color.withOpacity(0.2), width: 0.5)),
             ),
             child: Row(
               children: [
-                // 图标
                 Container(
                   padding: const EdgeInsets.all(5),
                   decoration: BoxDecoration(
@@ -168,14 +189,12 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
                   child: Icon(icon, size: 12, color: color),
                 ),
                 const SizedBox(width: 10),
-                // 文本
                 Expanded(
                   child: Text(
                     text,
                     style: TextStyle(color: color.withOpacity(0.9), fontSize: 11, fontWeight: FontWeight.w600),
                   ),
                 ),
-                // 按钮组
                 Row(
                   children: [
                     InkWell(
@@ -244,6 +263,7 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
                 children: [
                   const Text("📝 Rental Application", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
                   const SizedBox(height: 16),
+                  // ... (日期选择器 UI 保持不变) ...
                   const Text("Start Date", style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 6),
                   GestureDetector(
@@ -308,6 +328,7 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
                     ),
                   ),
+                  // ...
                   const SizedBox(height: 24),
                   Row(
                     children: [
@@ -379,12 +400,16 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
     IconData currentStatusIcon = widget.statusIcon;
     String displayStatus = status.toUpperCase().replaceAll('_', ' ');
 
+    // ✅ 新增状态 UI 逻辑
     if (status == 'application_pending') {
       currentStatusColor = Colors.orangeAccent; currentStatusIcon = Icons.hourglass_top; displayStatus = "PENDING";
     } else if (status == 'tenant_signed') {
       currentStatusColor = Colors.tealAccent; currentStatusIcon = Icons.edit_note; displayStatus = "WAITING LANDLORD";
     } else if (status == 'awaiting_payment') {
       currentStatusColor = const Color(0xFF00BFA5); currentStatusIcon = Icons.verified_user; displayStatus = "FINALIZED";
+    } else if (status == 'cancellation_pending') {
+      // ✅ 正在撤销中的状态
+      currentStatusColor = Colors.redAccent; currentStatusIcon = Icons.delete_forever; displayStatus = "CANCELLING...";
     }
 
     return Padding(
@@ -399,25 +424,24 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
                 context: context,
                 text: "Landlord requested cancel",
                 icon: Icons.delete_forever,
-                color: const Color(0xFFFF7043), // 柔和的深橙色
+                color: const Color(0xFFFF7043), 
                 onKeep: () async {
                    if (widget.docId == null) return;
                    await FirebaseFirestore.instance.collection('bookings').doc(widget.docId).update({
                       'deletionRequest': FieldValue.delete(),
                       'deletionRequestedBy': FieldValue.delete(),
-                      // 🔥🔥 关键：拒绝撤销也要通知房东 🔥🔥
                       'isReadByLandlord': false,
                    });
                 },
                 onConfirm: () async {
                    if (widget.docId == null) return;
-                   // 🔥 弹出毛玻璃二次确认
                    final bool? confirm = await _showConfirmDialog(
                      title: "Approve Deletion?",
                      content: "This action will permanently delete this booking for both parties.",
                      confirmText: "Delete",
                    );
                    if (confirm == true) {
+                     // 租客确认房东的删除请求，可以选择直接删除，或者设为 cancelled
                      await FirebaseFirestore.instance.collection('bookings').doc(widget.docId).delete();
                    }
                 }
@@ -497,8 +521,9 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
                       ],
                     ),
 
-                    // Action Bar
-                    if (status == 'approved' || status == 'ready_to_sign' || status == 'awaiting_payment') ...[
+                    // Action Bar (操作栏)
+                    // ✅ 在 Pending, Approved, Ready to Sign 等状态显示按钮
+                    if (['pending', 'approved', 'ready_to_sign', 'awaiting_payment'].contains(status)) ...[
                       const SizedBox(height: 5),
                       _buildActionBar(context, status),
                     ],
@@ -579,16 +604,59 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
   }
 
   Widget _buildActionBar(BuildContext context, String status) {
-    if (status == 'approved') {
+    // 1. Pending: 只有撤销
+    if (status == 'pending') {
       return SizedBox(
-        height: 28, 
-        child: _buildGradientButton("Apply Now", const [Color(0xFF1D5DC7), Color(0xFF1E88E5)], () => _showApplicationDialog(context)),
+        width: double.infinity,
+        height: 28,
+        child: TextButton.icon(
+          style: TextButton.styleFrom(
+            padding: EdgeInsets.zero,
+            foregroundColor: Colors.white38,
+          ),
+          icon: const Icon(Icons.cancel_outlined, size: 12),
+          label: const Text("Cancel Request", style: TextStyle(fontSize: 10)),
+          onPressed: _requestDeletion, // 触发主动撤销
+        ),
+      );
+    }
+    
+    // 2. Approved: 申请租房 或 撤销
+    else if (status == 'approved') {
+      return Row(
+        children: [
+          Expanded(
+            child: SizedBox(
+              height: 28, 
+              // 触发撤销
+              child: OutlinedButton(
+                onPressed: _requestDeletion, 
+                style: OutlinedButton.styleFrom(
+                   side: BorderSide(color: Colors.white.withOpacity(0.3)),
+                   foregroundColor: Colors.white70,
+                   padding: EdgeInsets.zero,
+                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                ),
+                child: const Text("Cancel", style: TextStyle(fontSize: 10)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: SizedBox(
+              height: 28, 
+              // 触发申请
+              child: _buildGradientButton("Apply Now", const [Color(0xFF1D5DC7), Color(0xFF1E88E5)], () => _showApplicationDialog(context)),
+            ),
+          ),
+        ],
       );
     } 
+
+    // 3. Ready to Sign: 签合同
     else if (status == 'ready_to_sign') {
       return SizedBox(
         height: 28,
-        // ✅ 使用正确的类名和参数 docId
         child: _buildGradientButton("Sign Contract", const [Color(0xFF295a68), Color(0xFF457f8f)], () {
           if (widget.docId != null) {
             Navigator.push(context, MaterialPageRoute(
@@ -598,6 +666,8 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
         }),
       );
     } 
+
+    // 4. Awaiting Payment: 支付
     else if (status == 'awaiting_payment') {
       return Row(
         children: [
