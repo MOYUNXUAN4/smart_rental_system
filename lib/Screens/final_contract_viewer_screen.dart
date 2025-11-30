@@ -14,7 +14,7 @@ class FinalContractViewerScreen extends StatefulWidget {
     super.key,
     required this.contractUrlZh,
     required this.contractUrlEn,
-    this.defaultLang = 'zh',
+    this.defaultLang = 'en',
   });
 
   @override

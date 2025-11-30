@@ -4,8 +4,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+// ✅ 引入新的弹窗工具 (请确保该文件已创建并在正确的路径)
+import '../Compoents/glass_dialog_helper.dart';
 // 引入卡片组件
-import '../Compoents/tenant_booking_card.dart';
+import '../Compoents/tenant_booking_card.dart'; 
 
 class TenantBookingsScreen extends StatefulWidget {
   const TenantBookingsScreen({super.key});
@@ -19,7 +21,6 @@ class _TenantBookingsScreenState extends State<TenantBookingsScreen> {
   @override
   void initState() {
     super.initState();
-    // 页面初始化时，执行“标记已读”
     _markAllAsRead();
   }
 
@@ -62,7 +63,7 @@ class _TenantBookingsScreenState extends State<TenantBookingsScreen> {
       ),
       body: Stack(
         children: [
-          // 背景
+          // 1. 极光背景
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -72,6 +73,7 @@ class _TenantBookingsScreenState extends State<TenantBookingsScreen> {
             ),
           ),
 
+          // 2. 内容区域
           SafeArea(
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
@@ -157,13 +159,98 @@ class _TenantBookingsScreenState extends State<TenantBookingsScreen> {
     );
   }
 
+  // 🔥 核心修改：带有统一毛玻璃弹窗的 Item 构建方法
   Widget _buildItem(QueryDocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
-    return TenantBookingCard(
-      bookingData: data,
-      docId: doc.id,
-      statusColor: Colors.white, 
-      statusIcon: Icons.circle,
+    final String status = data['status'] ?? '';
+    final String docId = doc.id;
+    
+    // 获取删除请求的状态
+    final String? deletionRequest = data['deletionRequest'];
+    final String? requestedBy = data['deletionRequestedBy'];
+
+    // 定义哪些是历史订单 (可以直接物理删除)
+    bool isHistory = ['rejected', 'cancelled', 'completed'].contains(status);
+
+    return Dismissible(
+      key: Key(docId),
+      direction: DismissDirection.endToStart, // 从右向左滑动
+
+      // --- 🎨 背景样式 ---
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20.0),
+        margin: const EdgeInsets.only(bottom: 10.0), 
+        decoration: BoxDecoration(
+          color: isHistory ? Colors.redAccent.withOpacity(0.8) : Colors.orangeAccent.withOpacity(0.8),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(
+          isHistory ? Icons.delete_forever : Icons.undo, // 图标区分
+          color: Colors.white, size: 28
+        ),
+      ),
+
+      // --- 🤝 确认逻辑 ---
+      confirmDismiss: (direction) async {
+        // 1. 检查是否已经存在挂起的请求
+        if (deletionRequest == 'pending') {
+          if (requestedBy == 'tenant') {
+             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("You already requested cancellation. Waiting for landlord.")));
+          } else {
+             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Landlord requested cancellation. Please check the card buttons.")));
+          }
+          return false; // 禁止滑动
+        }
+
+        // 2. 场景 A: 历史订单 -> 物理删除弹窗 (使用 glass_dialog_helper)
+        if (isHistory) {
+          return await showGlassConfirmDialog(
+            context: context,
+            title: "Delete History?",
+            content: "Are you sure you want to permanently delete this record? This cannot be undone.",
+            confirmBtnText: "Delete",
+            icon: Icons.delete_forever,
+            isDestructive: true, // 红色主题
+          );
+        }
+
+        // 3. 场景 B: 进行中订单 -> 发起撤销请求弹窗
+        bool? confirm = await showGlassConfirmDialog(
+          context: context,
+          title: "Request Cancellation?",
+          content: "Order is active. Send a request to the Landlord to CANCEL this booking?",
+          confirmBtnText: "Send Request",
+          icon: Icons.outgoing_mail,
+          isDestructive: false, // 蓝色/橙色主题
+        );
+
+        if (confirm == true) {
+          // 发起请求
+          await FirebaseFirestore.instance.collection('bookings').doc(docId).update({
+            'deletionRequest': 'pending',
+            'deletionRequestedBy': 'tenant' 
+          });
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Cancellation request sent.")));
+          return false; // 不直接删除列表项，而是变成等待状态
+        }
+        return false;
+      },
+
+      // 只有 confirmDismiss 返回 true 时（即历史订单确认删除后）才会执行这里
+      onDismissed: (direction) async {
+        if (isHistory) {
+          await FirebaseFirestore.instance.collection('bookings').doc(docId).delete();
+        }
+      },
+
+      // 你的原始卡片组件
+      child: TenantBookingCard(
+        bookingData: data,
+        docId: docId,
+        statusColor: Colors.white, 
+        statusIcon: Icons.circle,
+      ),
     );
   }
 
@@ -182,7 +269,7 @@ class _TenantBookingsScreenState extends State<TenantBookingsScreen> {
 }
 
 // ==============================================
-// 🔥 纯展示型毛玻璃分组组件 (Stateless & No Folding)
+// 🔥 纯展示型毛玻璃分组组件
 // ==============================================
 class _GlassSection extends StatelessWidget {
   final String title;
@@ -202,7 +289,7 @@ class _GlassSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 16.0), // 增加间距，让分类更明显
+      margin: const EdgeInsets.only(bottom: 16.0),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
         child: BackdropFilter(
@@ -212,13 +299,12 @@ class _GlassSection extends StatelessWidget {
               color: color.withOpacity(0.08), 
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: color.withOpacity(0.3), // 固定边框亮度
+                color: color.withOpacity(0.3),
                 width: 1
               ),
             ),
             child: Column(
               children: [
-                // --- 1. 标题栏 (固定显示) ---
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                   child: Row(
@@ -236,15 +322,10 @@ class _GlassSection extends StatelessWidget {
                         decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(10)),
                         child: Text("$count", style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold)),
                       ),
-                      // ❌ 这里移除了箭头图标
                     ],
                   ),
                 ),
-
-                // --- 2. 分割线 (让标题和内容分开一点) ---
                 Divider(height: 1, color: color.withOpacity(0.2)),
-
-                // --- 3. 内容列表 (永远展开) ---
                 Padding(
                   padding: const EdgeInsets.fromLTRB(6, 6, 6, 6), 
                   child: Column(children: children),

@@ -1,12 +1,13 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:flutter/material.dart';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:signature/signature.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:http/http.dart' as http;
+import 'package:flutter/material.dart';
 import 'package:flutter_pdfview/flutter_pdfview.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:signature/signature.dart';
 
 // ⚠️ 确保路径拼写与你项目一致
 import '../Compoents/contract_generator.dart'; 
@@ -43,8 +44,8 @@ class _SharedContractSigningScreenState extends State<SharedContractSigningScree
   bool _isUploading = false;
   String? _errorMessage;
 
-  // 语言控制
-  String _currentLanguage = 'zh'; 
+  // 语言控制 (✅ 默认改为英文)
+  String _currentLanguage = 'en'; 
   
   // 数据缓存
   Map<String, dynamic>? _cachedData;
@@ -79,7 +80,6 @@ class _SharedContractSigningScreenState extends State<SharedContractSigningScree
       final propertyData = propertyDoc.data() ?? {};
 
       // ✅ 检查是否使用系统合同 (默认为 true，除非明确标记为 false 或手动上传了且没标记)
-      // 在 AddPropertyScreen 我们存了 useSystemContract 字段
       _isCustomContract = propertyData['useSystemContract'] == false;
 
       // 3. 如果是房东，需要下载租客的签名
@@ -172,8 +172,6 @@ class _SharedContractSigningScreenState extends State<SharedContractSigningScree
     }
 
     // 决定传入哪些签名
-    // 租客模式：传 _mySignatureBytes (如果是预览)
-    // 房东模式：传 _tenantSignatureBytes + _mySignatureBytes (如果是预览)
     Uint8List? tSig;
     Uint8List? lSig;
 
@@ -236,16 +234,13 @@ class _SharedContractSigningScreenState extends State<SharedContractSigningScree
       _mySignatureBytes = signature;
       
       if (_isCustomContract) {
-        // ✅ 自定义合同逻辑：
-        // 我们不生成新 PDF，只是进入预览模式。
-        // 这里为了简单，预览时还是显示原 PDF，但在上传时我们会上传签名图。
-        // 如果想要把签名“贴”上去，比较复杂。目前的逻辑是：显示原件 -> 确认 -> 上传签名图。
+        // 自定义合同预览模式
         if (mounted) setState(() {
           _isPreviewMode = true;
           _isLoading = false;
         });
       } else {
-        // ✅ 系统合同逻辑：重新渲染带签名的 PDF
+        // 系统合同重新渲染
         await _renderSystemPdf();
         if (mounted) setState(() => _isPreviewMode = true);
       }
@@ -258,7 +253,7 @@ class _SharedContractSigningScreenState extends State<SharedContractSigningScree
       _mySignatureBytes = null;
       _isPreviewMode = false;
       _generatedPdfFile = null;
-      _isLoading = !_isCustomContract; // 如果是系统合同，需要重新渲染无签名版
+      _isLoading = !_isCustomContract; 
     });
     if (!_isCustomContract) _renderSystemPdf();
   }
@@ -271,7 +266,7 @@ class _SharedContractSigningScreenState extends State<SharedContractSigningScree
     try {
       final storage = FirebaseStorage.instance;
       
-      // 1. 始终上传当前用户的签名图片 (供另一方或存档使用)
+      // 1. 始终上传当前用户的签名图片
       String sigFileName = widget.isLandlord ? '${widget.docId}_landlord.png' : '${widget.docId}_tenant.png';
       if (_mySignatureBytes != null) {
         await storage.ref().child('signatures/$sigFileName').putData(_mySignatureBytes!);
@@ -281,42 +276,36 @@ class _SharedContractSigningScreenState extends State<SharedContractSigningScree
 
       // 2. 处理合同文件上传
       if (_isCustomContract) {
-        // ✅ 自定义合同：不生成新 PDF，沿用原来的 URL，只更新状态
-        // 实际上，我们应该把签名的状态写进去。
-        // 既然是自定义 PDF，我们无法在客户端轻易修改它。
-        // 所以我们保留原链接，但更新状态。
+        // 沿用旧 URL
         final bookingDoc = await FirebaseFirestore.instance.collection('bookings').doc(widget.docId).get();
         mainContractUrl = bookingDoc.data()?['contractUrl'] ?? "";
       } else {
-        // ✅ 系统合同：生成并上传 (双语)
-        // 只有在房东复签时，或者租客签字时，我们才上传生成的 PDF
+        // 上传生成的 PDF
         if (_generatedPdfFile != null) {
-           // 这里简单起见，上传当前生成的文件。
-           // 如果需要严格的双语后台存档，可以在这里调用 _generateFileForUpload('zh') 和 'en'
-           // 既然是通用组件，我们上传当前用户看到的版本作为主版本
            String suffix = widget.isLandlord ? 'final' : 'signed';
            await storage.ref().child('contracts/${widget.docId}_${suffix}_$_currentLanguage.pdf').putFile(_generatedPdfFile!);
            mainContractUrl = await storage.ref().child('contracts/${widget.docId}_${suffix}_$_currentLanguage.pdf').getDownloadURL();
         }
       }
 
-      // 3. 更新 Firestore 状态
+      // 3. 更新 Firestore 状态 (✅ 核心修复：更新 isReadByXxx)
       Map<String, dynamic> updateData = {};
+      
       if (widget.isLandlord) {
-        // 房东签完 -> 等待付款
+        // 房东签完 -> 等待付款 -> 通知租客
         updateData = {
           'status': 'awaiting_payment',
           'contractUrl': mainContractUrl,
           'landlordSignedAt': Timestamp.now(),
-          'isReadByTenant': false,
+          'isReadByTenant': false, // 🔥 通知租客
         };
       } else {
-        // 租客签完 -> 房东复签
+        // 租客签完 -> 房东复签 -> 通知房东
         updateData = {
           'status': 'tenant_signed',
           'contractUrl': mainContractUrl,
           'tenantSignedAt': Timestamp.now(),
-          'isReadByLandlord': false,
+          'isReadByLandlord': false, // 🔥 通知房东
         };
       }
 
@@ -358,12 +347,12 @@ class _SharedContractSigningScreenState extends State<SharedContractSigningScree
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          // ✅ 只有系统生成的合同才显示语言切换，且只有在未上传时
+          // 只有系统生成的合同才显示语言切换
           if (!_isCustomContract && !_isUploading)
             Padding(
               padding: const EdgeInsets.only(right: 16),
               child: Theme(
-                data: Theme.of(context).copyWith(canvasColor: const Color(0xFF295a68)), // 下拉菜单背景色
+                data: Theme.of(context).copyWith(canvasColor: const Color(0xFF295a68)),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
                     value: _currentLanguage,

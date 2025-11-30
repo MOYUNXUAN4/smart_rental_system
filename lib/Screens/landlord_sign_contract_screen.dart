@@ -36,7 +36,7 @@ class _LandlordSignContractScreenState extends State<LandlordSignContractScreen>
   String? _errorMessage; 
 
   // 语言控制
-  String _currentLanguage = 'zh';
+  String _currentLanguage = 'en';
   
   // 缓存数据 (避免反复读库)
   Map<String, dynamic>? _cachedData;

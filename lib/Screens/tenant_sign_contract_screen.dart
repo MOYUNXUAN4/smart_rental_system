@@ -1,12 +1,13 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:flutter/material.dart';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:signature/signature.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:http/http.dart' as http;
+import 'package:flutter/material.dart';
 import 'package:flutter_pdfview/flutter_pdfview.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:signature/signature.dart';
 
 // Ensure this import path matches your project structure
 import '../Compoents/contract_generator.dart'; 
@@ -44,7 +45,7 @@ class _SharedContractSigningScreenState extends State<SharedContractSigningScree
   String? _errorMessage;
 
   // Language control for system contracts
-  String _currentLanguage = 'zh'; 
+  String _currentLanguage = 'en'; 
   
   // Data cache
   Map<String, dynamic>? _cachedData;
