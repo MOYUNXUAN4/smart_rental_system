@@ -6,11 +6,10 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-// 引入合同查看器 (用于 View Contract 按钮)
+// ✅ 确保引入了你的相关页面
 import '../Screens/final_contract_viewer_screen.dart';
-// 引入房东签字页面
 import '../Screens/landlord_sign_contract_screen.dart';
-import 'contract_generator.dart';
+import 'contract_generator.dart'; // 确保你有这个文件
 import 'glass_card.dart'; 
 
 class LandlordBookingCard extends StatefulWidget {
@@ -29,6 +28,7 @@ class LandlordBookingCard extends StatefulWidget {
 
 class _LandlordBookingCardState extends State<LandlordBookingCard> {
 
+  // 获取租客名字
   Future<String> _getTenantName(String tenantUid) async {
     try {
       final doc = await FirebaseFirestore.instance.collection('users').doc(tenantUid).get();
@@ -36,6 +36,7 @@ class _LandlordBookingCardState extends State<LandlordBookingCard> {
     } catch (e) { return '...'; }
   }
 
+  // 获取房源名字
   Future<String> _getPropertyName(String propertyId) async {
     try {
       final doc = await FirebaseFirestore.instance.collection('properties').doc(propertyId).get();
@@ -48,7 +49,7 @@ class _LandlordBookingCardState extends State<LandlordBookingCard> {
     try {
       await FirebaseFirestore.instance.collection('bookings').doc(widget.docId).update({
           'status': newStatus,
-          // 🔥 通知租客
+          // 🔥 关键：通知租客
           'isReadByTenant': false, 
       });
       if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Updated to $newStatus")));
@@ -135,7 +136,7 @@ class _LandlordBookingCardState extends State<LandlordBookingCard> {
     );
   }
 
-  // 🔥 高级毛玻璃横幅构建器
+  // 🔥 高级毛玻璃横幅构建器 (用于撤销请求显示)
   Widget _buildGlassBanner({
     required BuildContext context,
     required String text,
@@ -174,7 +175,7 @@ class _LandlordBookingCardState extends State<LandlordBookingCard> {
                       onTap: onKeep,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        child: Text("Keep", style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11)),
+                        child: Text("Reject", style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11)),
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -191,7 +192,7 @@ class _LandlordBookingCardState extends State<LandlordBookingCard> {
                           borderRadius: BorderRadius.circular(12),
                           boxShadow: [BoxShadow(color: color.withOpacity(0.3), blurRadius: 4, offset: const Offset(0, 2))]
                         ),
-                        child: const Text("Confirm", style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                        child: const Text("Approve", style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
                       ),
                     ),
                   ],
@@ -204,12 +205,13 @@ class _LandlordBookingCardState extends State<LandlordBookingCard> {
     );
   }
 
-  // ✅ 修复：生成合同逻辑 (解决无限转圈问题)
+  // ✅✅✅ 核心修复：生成合同逻辑 (解决无限转圈问题)
   Future<void> _handleReleaseContract(BuildContext context) async {
     final String propertyId = widget.bookingData['propertyId'];
     final String tenantUid = widget.bookingData['tenantUid'];
     final String? landlordUid = widget.bookingData['landlordUid']; 
     
+    // 检查日期数据完整性
     final Timestamp? startDateTs = widget.bookingData['leaseStartDate'];
     final Timestamp? endDateTs = widget.bookingData['leaseEndDate'];
 
@@ -218,7 +220,7 @@ class _LandlordBookingCardState extends State<LandlordBookingCard> {
       return;
     }
 
-    // 1. 显示 Loading
+    // 1. 🚀 开始转圈 (Loading)
     showDialog(
       context: context, 
       barrierDismissible: false,
@@ -226,7 +228,7 @@ class _LandlordBookingCardState extends State<LandlordBookingCard> {
     );
 
     try {
-      // 2. 获取数据
+      // 2. 获取合同所需的详细信息
       final propertyDoc = await FirebaseFirestore.instance.collection('properties').doc(propertyId).get();
       final propertyData = propertyDoc.data() as Map<String, dynamic>;
       
@@ -239,13 +241,14 @@ class _LandlordBookingCardState extends State<LandlordBookingCard> {
       final tenantDoc = await FirebaseFirestore.instance.collection('users').doc(tenantUid).get();
       final String tenantName = tenantDoc.data()?['name'] ?? "Tenant";
 
+      // 格式化日期
       final start = startDateTs.toDate();
       final end = endDateTs.toDate();
       final String startStr = DateFormat('yyyy-MM-dd').format(start);
       final String endStr = DateFormat('yyyy-MM-dd').format(end);
       final String paymentDay = "${start.day}"; 
 
-      // 3. 生成 PDF
+      // 3. 📄 生成 PDF (调用你的 ContractGenerator)
       final File generatedPdf = await ContractGenerator.generateAndSaveContract(
         landlordName: landlordName, 
         tenantName: tenantName, 
@@ -254,38 +257,39 @@ class _LandlordBookingCardState extends State<LandlordBookingCard> {
         startDate: startStr, 
         endDate: endStr, 
         paymentDay: paymentDay, 
-        language: 'en', // 默认英文
+        language: 'en', // 默认生成英文版，或者你可以根据需求改成双语
       );
 
-      // 4. 上传
+      // 4. ☁️ 上传 PDF 到 Firebase Storage
       final String fileName = 'contracts/initial_${widget.docId}_${DateTime.now().millisecondsSinceEpoch}.pdf';
       final ref = FirebaseStorage.instance.ref().child(fileName);
       await ref.putFile(generatedPdf);
       final String newContractUrl = await ref.getDownloadURL(); 
 
-      // 5. 更新状态 + 通知租客
+      // 5. 💾 更新 Firestore 状态
       await FirebaseFirestore.instance.collection('bookings').doc(widget.docId).update({
-        'status': 'ready_to_sign', 
-        'contractUrl': newContractUrl, 
+        'status': 'ready_to_sign',    // 状态变更为：等待租客签字
+        'contractUrl': newContractUrl, // 保存合同链接
         'contractReleasedAt': Timestamp.now(),
         'monthlyPaymentDay': paymentDay, 
-        // 🔥🔥 关键：通知租客 🔥🔥
+        
+        // 🔥🔥 关键：通知租客 (红点触发器) 🔥🔥
         'isReadByTenant': false, 
       });
 
-      // 6. 成功 -> 关闭 Loading
+      // 6. 🛑 成功：关闭 Loading 圈圈
       if (context.mounted) {
-        Navigator.pop(context); 
+        Navigator.pop(context); // 关闭 Dialog
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Contract Sent to Tenant!"), backgroundColor: Color(0xFF1D5DC7)),
         );
       }
     } catch (e) {
-      // 🛑 失败 -> 关闭 Loading 并显示错误
+      // 🛑 失败：也要关闭 Loading 圈圈
       if (context.mounted) {
-        Navigator.pop(context); 
+        Navigator.pop(context); // 关闭 Dialog
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red));
-        print("Contract Error: $e"); 
+        print("Contract Error: $e"); // 打印到控制台方便调试
       }
     }
   }
@@ -303,18 +307,18 @@ class _LandlordBookingCardState extends State<LandlordBookingCard> {
     final String? deletionRequest = widget.bookingData['deletionRequest'];
     final String? requestedBy = widget.bookingData['deletionRequestedBy'];
 
-    // 2. 判断横幅显示
+    // 2. 判断横幅显示逻辑
     bool showIncomingRequest = (deletionRequest == 'pending' && requestedBy == 'tenant');
     bool showWaitingMessage = (deletionRequest == 'pending' && requestedBy == 'landlord');
 
-    // 状态颜色逻辑
+    // 3. 状态颜色逻辑
     Color statusColor = Colors.white70;
     String statusText = status.toUpperCase().replaceAll('_', ' ');
     
     if (status == 'pending') { statusColor = Colors.orangeAccent; }
     else if (status == 'approved') { statusColor = const Color(0xFF69F0AE); } 
     else if (status == 'application_pending') { statusColor = Colors.amber; statusText = "APP PENDING"; }
-    else if (status == 'ready_to_sign') { statusColor = Colors.cyanAccent; }
+    else if (status == 'ready_to_sign') { statusColor = Colors.cyanAccent; statusText = "WAITING TENANT"; }
     else if (status == 'tenant_signed') { statusColor = Colors.tealAccent; statusText = "ACTION REQUIRED"; }
     else if (status == 'awaiting_payment') { statusColor = const Color(0xFF80DEEA); } 
 
@@ -330,23 +334,22 @@ class _LandlordBookingCardState extends State<LandlordBookingCard> {
                 context: context,
                 text: "Tenant requested cancel",
                 icon: Icons.delete_forever,
-                color: const Color(0xFFFF7043), // 醒目的深橙色
+                color: const Color(0xFFFF7043), 
                 onKeep: () async {
+                   // 房东拒绝删除 -> 清除请求
                    await FirebaseFirestore.instance.collection('bookings').doc(widget.docId).update({
                       'deletionRequest': FieldValue.delete(),
                       'deletionRequestedBy': FieldValue.delete(),
-                      // 🔥 通知租客“我拒绝了撤销”
-                      'isReadByTenant': false,
+                      'isReadByTenant': false, // 通知租客
                    });
                 },
                 onConfirm: () async {
-                   // 🔥 弹出毛玻璃确认框
+                   // 房东同意删除 -> 物理删除
                    final bool? confirm = await _showConfirmDialog(
                      title: "Approve Deletion?",
-                     content: "This will permanently delete this booking for both you and the tenant.",
+                     content: "This will permanently delete this booking.",
                      confirmText: "Delete",
                    );
-                   // 🔥 二次确认后执行物理删除
                    if (confirm == true) {
                      await FirebaseFirestore.instance.collection('bookings').doc(widget.docId).delete();
                    }
@@ -383,7 +386,7 @@ class _LandlordBookingCardState extends State<LandlordBookingCard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 1. Header
+                  // 1. Header (房源名 + 状态)
                   Row(
                     children: [
                       Expanded(
@@ -414,7 +417,7 @@ class _LandlordBookingCardState extends State<LandlordBookingCard> {
                   
                   const SizedBox(height: 4),
 
-                  // 2. Info Row
+                  // 2. Info Row (时间 + 租客名)
                   Row(
                     children: [
                       _buildIconText(Icons.access_time, formattedTime),
@@ -433,7 +436,7 @@ class _LandlordBookingCardState extends State<LandlordBookingCard> {
                     _buildIconText(Icons.location_on, meetingPoint),
                   ],
 
-                  // 3. Application Note
+                  // 3. Application Note (租客留言)
                   if (status == 'application_pending') ...[
                      const SizedBox(height: 4),
                      Container(
@@ -451,7 +454,9 @@ class _LandlordBookingCardState extends State<LandlordBookingCard> {
                      ),
                   ],
 
-                  // 4. Action Buttons
+                  // 4. Action Buttons (根据状态变化的按钮组)
+                  
+                  // 🟡 Pending: 只能看，或者拒绝
                   if (status == 'pending') ...[
                     const SizedBox(height: 6),
                     Row(
@@ -463,17 +468,20 @@ class _LandlordBookingCardState extends State<LandlordBookingCard> {
                     ),
                   ],
 
+                  // 🟠 Application Pending: 生成合同
                   if (status == 'application_pending') ...[
                     const SizedBox(height: 6),
                     Row(
                       children: [
                         Expanded(flex: 1, child: _buildOutlineBtn("Reject", Colors.redAccent, () => _updateStatus(context, 'rejected'))),
                         const SizedBox(width: 6),
+                        // 🔥 点击这里触发 _handleReleaseContract
                         Expanded(flex: 2, child: _buildGradientBtn("Approve Contract", const [Color(0xFF1D5DC7), Color(0xFF42A5F5)], () => _handleReleaseContract(context))),
                       ],
                     ),
                   ],
 
+                  // 🟢 Tenant Signed: 房东复签
                   if (status == 'tenant_signed') ...[
                     const SizedBox(height: 6),
                     SizedBox(
@@ -484,6 +492,7 @@ class _LandlordBookingCardState extends State<LandlordBookingCard> {
                     ),
                   ],
                   
+                  // 🔵 Awaiting Payment: 等待
                   if (status == 'awaiting_payment') ...[
                     const SizedBox(height: 6),
                     Row(
@@ -547,7 +556,7 @@ class _LandlordBookingCardState extends State<LandlordBookingCard> {
     );
   }
 
-  // --- 辅助组件 ---
+  // --- UI 辅助组件 ---
   Widget _buildIconText(IconData icon, String text) {
     return Row(
       mainAxisSize: MainAxisSize.min,
