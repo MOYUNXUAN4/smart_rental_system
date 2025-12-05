@@ -1,9 +1,8 @@
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
 
-// ▼▼▼ 这里我用了相对路径，会自动向上找 Services 文件夹 ▼▼▼
-// 只要你的目录结构是 lib/Services/account_check_screen.dart 就能找到
-import '../Services/account_check_screen.dart'; 
+import '../Services/account_check_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -32,12 +31,12 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
       duration: const Duration(milliseconds: 2600),
     );
 
-    // 1. 背景渐变动画
+    // 1. background animation
     fadeBg = Tween(begin: 0.55, end: 1.0).animate(
       CurvedAnimation(parent: _ctrl, curve: const Interval(0.00, 0.90, curve: Curves.easeInOut)),
     );
 
-    // 2. 卡片动画
+    // 2. card animation
     cardOpacity = Tween(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _ctrl, curve: const Interval(0.05, 0.30, curve: Curves.easeOut)),
     );
@@ -45,7 +44,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
       CurvedAnimation(parent: _ctrl, curve: const Interval(0.05, 0.40, curve: Curves.easeOutCubic)),
     );
 
-    // 3. Logo 动画
+    // 3. Logo animation
     logoOpacity = Tween(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _ctrl, curve: const Interval(0.25, 0.55, curve: Curves.easeOut)),
     );
@@ -56,7 +55,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
       CurvedAnimation(parent: _ctrl, curve: const Interval(0.25, 0.85, curve: Curves.easeOut)),
     );
 
-    // 4. 文字动画
+    // 4. text animation
     textOpacity = Tween(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _ctrl, curve: const Interval(0.60, 1.0, curve: Curves.easeIn)),
     );
@@ -66,18 +65,17 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
 
     _ctrl.forward();
 
-    // 监听动画结束
+    // animation final status listener
     _ctrl.addStatusListener((st) {
       if (st == AnimationStatus.completed) _goNext();
     });
   }
 
   void _goNext() {
-    // 动画播放完，跳转到原来的入口 AccountCheckScreen
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 800),
-        pageBuilder: (_, __, ___) => const AccountCheckScreen(), // 确保这里没报错
+        pageBuilder: (_, __, ___) => const AccountCheckScreen(),
         transitionsBuilder: (_, anim, __, child) =>
             FadeTransition(opacity: anim, child: child),
       ),
@@ -104,7 +102,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
         builder: (_, __) {
           return Stack(
             children: [
-              // 背景层
+              // 1. 背景层
               Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -114,12 +112,12 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                   ),
                 ),
               ),
-              // 内容层
+              // 2. 内容层
               Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // 毛玻璃卡片
+                    // --- 毛玻璃 Logo 卡片 ---
                     Opacity(
                       opacity: cardOpacity.value,
                       child: Transform.scale(
@@ -129,7 +127,8 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                           child: BackdropFilter(
                             filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
                             child: Container(
-                              width: 200, height: 200,
+                              // 【调整】为了配合小文字，卡片尺寸微调为 160 (原 200)
+                              width: 160, height: 160,
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(28),
                                 gradient: LinearGradient(
@@ -144,8 +143,8 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                                   child: Opacity(
                                     opacity: logoOpacity.value,
                                     child: Padding(
-                                      padding: const EdgeInsets.all(35),
-                                      // ▼▼▼ 确保你有这张图片，没有的话会报错 ▼▼▼
+                                      padding: const EdgeInsets.all(30), // Padding 微调
+                                      // 确保图片资源存在
                                       child: Image.asset('assets/images/my_logo.png', fit: BoxFit.contain),
                                     ),
                                   ),
@@ -156,15 +155,23 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                         ),
                       ),
                     ),
-                    const SizedBox(height: 42),
-                    // 文字
+                    
+                    const SizedBox(height: 35),
+                    
+                    // --- 文字部分 (已调整为居中、缩小) ---
                     FadeTransition(
                       opacity: textOpacity,
                       child: SlideTransition(
                         position: textSlide,
                         child: const Text(
-                          "SRS",
-                          style: TextStyle(fontSize: 40, fontWeight: FontWeight.w600, letterSpacing: 4, color: Colors.white),
+                          "Smart Rental System",
+                          textAlign: TextAlign.center, // 确保文字水平居中
+                          style: TextStyle(
+                            fontSize: 18,                // 【修改】字体变小 (原 40)
+                            fontWeight: FontWeight.w500, // 【修改】字重变细
+                            letterSpacing: 3.5,          // 保持一定的字母间距，显得精致
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ),

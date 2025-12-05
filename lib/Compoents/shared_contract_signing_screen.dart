@@ -152,9 +152,7 @@ class _SharedContractSigningScreenState extends State<SharedContractSigningScree
     await _renderSystemPdf();
   }
 
-  // ==========================================
-  // 2. 渲染系统 PDF (调用 Generator)
-  // ==========================================
+
   Future<void> _renderSystemPdf() async {
     if (_cachedData == null) return;
 
@@ -171,16 +169,16 @@ class _SharedContractSigningScreenState extends State<SharedContractSigningScree
         endStr = "${e.year}-${e.month}-${e.day}";
     }
 
-    // 决定传入哪些签名
+    // prepare signatures
     Uint8List? tSig;
     Uint8List? lSig;
 
     if (widget.isLandlord) {
-      tSig = _tenantSignatureBytes; // 房东总是能看到租客签名
-      lSig = _mySignatureBytes;     // 房东自己的签名
+      tSig = _tenantSignatureBytes; // landlord check tenant's signature
+      lSig = _mySignatureBytes;     // landlord's own signature
     } else {
-      tSig = _mySignatureBytes;     // 租客自己的签名
-      lSig = null;                  // 租客看不到房东签名
+      tSig = _mySignatureBytes;     // tenant's own signature
+      lSig = null;                  // tenant cannot see landlord's signature
     }
 
     final File pdfFile = await ContractGenerator.generateAndSaveContract(
@@ -191,7 +189,7 @@ class _SharedContractSigningScreenState extends State<SharedContractSigningScree
       startDate: startStr,
       endDate: endStr,
       paymentDay: paymentDay,
-      language: _currentLanguage, // ✅ 动态语言
+      language: _currentLanguage, 
       tenantSignature: tSig,
       landlordSignature: lSig,
     );

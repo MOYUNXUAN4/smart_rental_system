@@ -1,7 +1,8 @@
 // lib/Screens/compare_screen.dart
-import 'dart:ui';
 import 'dart:math';
+
 import 'package:flutter/material.dart';
+
 import '../Compoents/glass_card.dart';
 
 class CompareScreen extends StatefulWidget {
@@ -14,7 +15,6 @@ class CompareScreen extends StatefulWidget {
 }
 
 class _CompareScreenState extends State<CompareScreen> {
-  // 缓存计算结果
   late double minPrice;
   late double maxSize;
   late int maxBedrooms;
@@ -22,7 +22,6 @@ class _CompareScreenState extends State<CompareScreen> {
   late int maxParking;
   late int bestFurnishScore;
   
-  // ✅ 新增：用于统计 Feature 出现的频率，判断是否“独有”
   late Map<String, int> featureCounts;
 
   @override
@@ -35,7 +34,6 @@ class _CompareScreenState extends State<CompareScreen> {
     if (widget.properties.isEmpty) return;
 
     try {
-      // 1. 计算各项数值的“最佳值”
       minPrice = widget.properties
           .map((p) => (p['price'] ?? 0).toDouble())
           .cast<double>()
@@ -66,11 +64,10 @@ class _CompareScreenState extends State<CompareScreen> {
           .cast<int>()
           .reduce((a, b) => max(a, b));
 
-      // 2. ✅ 统计所有 Features 出现的次数
+
       featureCounts = {};
       for (var p in widget.properties) {
         final List<String> feats = List<String>.from(p['features'] ?? []);
-        // 统一转小写统计，避免大小写差异
         for (var f in feats) {
           final key = f.trim(); 
           featureCounts[key] = (featureCounts[key] ?? 0) + 1;
@@ -208,7 +205,6 @@ class _CompareScreenState extends State<CompareScreen> {
           ),
           const SizedBox(height: 16),
 
-          // 这里的 isPrice: true 确保价格赢家是绿色
           _buildSimpleCard(label: "Price/Mo", value: "RM ${price.toStringAsFixed(0)}", isWinner: isBestPrice, isPrice: true),
           _buildSimpleCard(label: "Size", value: "$size sqft", isWinner: isBestSize),
           _buildSimpleCard(label: "Bedrooms", value: "$bedrooms", isWinner: isBestBed),
@@ -236,7 +232,6 @@ class _CompareScreenState extends State<CompareScreen> {
                 return Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    // ✅ 差异项显示：绿色背景微光 + 绿色边框
                     color: isUnique ? Colors.green.withOpacity(0.15) : Colors.white.withOpacity(0.05),
                     border: Border.all(
                       color: isUnique ? Colors.greenAccent : Colors.transparent, 
@@ -254,7 +249,6 @@ class _CompareScreenState extends State<CompareScreen> {
   }
 
   Widget _buildSimpleCard({required String label, required String value, required bool isWinner, bool isPrice = false}) {
-    // ✅ 赢家样式统一改为绿色
     final Color winnerColor = Colors.greenAccent;
 
     return Container(
@@ -263,7 +257,6 @@ class _CompareScreenState extends State<CompareScreen> {
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.05),
         borderRadius: BorderRadius.circular(12),
-        // ✅ 赢家显示绿色边框
         border: isWinner 
             ? Border.all(color: winnerColor, width: 1.5) 
             : Border.all(color: Colors.transparent),
@@ -279,7 +272,6 @@ class _CompareScreenState extends State<CompareScreen> {
               Text(value, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
             ],
           ),
-          // ✅ 赢家显示绿色勾选图标
           if (isWinner)
             Icon(Icons.check_circle, color: winnerColor, size: 16),
         ],

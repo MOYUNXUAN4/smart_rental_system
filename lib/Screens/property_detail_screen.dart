@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
 // ✅ 1. 引入全景图查看包
-import 'package:panorama_viewer/panorama_viewer.dart'; 
+import 'package:panorama_viewer/panorama_viewer.dart';
 import 'package:smart_rental_system/screens/add_property_screen.dart';
 
 import '../Compoents/favorite_button.dart';
@@ -566,8 +566,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                                 ],
                               ),
                             ),
-                            
-                            // 360 全景图展示区域
+                          
                             if (url360 != null && url360.isNotEmpty) ...[
                               const SizedBox(height: 16),
                               GlassCard(
@@ -589,15 +588,14 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                                     ClipRRect(
                                       borderRadius: BorderRadius.circular(12),
                                       child: SizedBox(
-                                        height: 250, // 预览区域高度
+                                        height: 250, 
                                         child: Stack(
                                           children: [
                                             PanoramaViewer(
-                                              // 开启陀螺仪
+                                              // open gyro by default
                                               sensorControl: SensorControl.orientation,
                                               child: Image.network(url360),
                                             ),
-                                            // 提示遮罩
                                             Positioned(
                                               bottom: 10,
                                               right: 10,

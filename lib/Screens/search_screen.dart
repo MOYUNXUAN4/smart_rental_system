@@ -546,7 +546,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     });
   }
 
-  // 优化后的直方图：高度变化也有动画
+  // Price Histogram
   Widget _buildPriceHistogram() {
     const int bucketCount = 10;
     const double maxPrice = 5000.0;

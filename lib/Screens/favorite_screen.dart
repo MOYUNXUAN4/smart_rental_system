@@ -45,7 +45,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     super.dispose();
   }
 
-  // --- 数据监听逻辑 (保持不变) ---
+
   void _setupDataListener() {
     _subscription = _favoriteService.getFavoriteIdsStream().listen((ids) async {
       if (ids.isEmpty) {
@@ -53,20 +53,19 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         return;
       }
       try {
-        // 根据ID列表获取最新数据
+        // get all property documents in parallel
         final futures = ids.map((id) =>
           FirebaseFirestore.instance.collection('properties').doc(id).get()
         );
         final results = await Future.wait(futures);
         final validDocs = results.where((doc) => doc.exists).toList();
         
-        _sortDocs(validDocs, ids); // 排序
-
+        _sortDocs(validDocs, ids); 
         if (mounted) {
           setState(() {
             _properties = validDocs;
             _isLoading = false;
-            // 清理已经不存在于收藏列表中的选中项
+          
             _selectedIds.removeWhere((id) => !validDocs.any((doc) => doc.id == id));
           });
         }
@@ -192,8 +191,6 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       onTap: () {
         setState(() {
           _currentSort = type;
-          // 重新触发排序 (ID列表需要重新获取或缓存，这里简单起见让流重新处理，或者直接对当前列表排序)
-           // 简单Hack: 手动对当前 _properties 排序
            List<String> currentIds = _properties.map((e) => e.id).toList();
            _sortDocs(_properties, currentIds);
         });
@@ -226,10 +223,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      // 移除默认 AppBar，改用 Stack 里的 Header
       body: Stack(
         children: [
-          // 1. 背景渐变
+  
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
