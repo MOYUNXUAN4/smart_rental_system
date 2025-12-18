@@ -1,13 +1,16 @@
-import 'dart:ui'; // ✅ 必须引入，用于 ImageFilter
+import 'dart:ui'; // ✅ Required for ImageFilter
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-// ✅ 引入相关页面
+// ✅ Import relevant screens and services
 import '../Screens/final_contract_viewer_screen.dart';
+import '../Screens/receipt_screen.dart'; // ✅ Added Receipt Screen
+import '../Services/stripe_service.dart';
 import 'glass_card.dart';
-import 'shared_contract_signing_screen.dart'; 
+import 'shared_contract_signing_screen.dart';
+
 
 class TenantBookingCard extends StatefulWidget {
   final Map<String, dynamic> bookingData;
@@ -28,9 +31,10 @@ class TenantBookingCard extends StatefulWidget {
 }
 
 class _TenantBookingCardState extends State<TenantBookingCard> with SingleTickerProviderStateMixin {
-  bool _isExpanded = false; // 控制详情折叠
+  bool _isExpanded = false; 
+  bool _isPaying = false;   
 
-  // 获取房产名称
+  // Fetch Property Name
   Future<String> _getPropertyName(String propertyId) async {
     try {
       final doc = await FirebaseFirestore.instance.collection('properties').doc(propertyId).get();
@@ -38,7 +42,7 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
     } catch (e) { return '...'; }
   }
 
-  // 获取房东名称
+  // Fetch Landlord Name
   Future<String> _getLandlordName(String? uid) async {
     if (uid == null) return "Unknown";
     try {
@@ -47,14 +51,120 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
     } catch (e) { return '...'; }
   }
 
-  // 支付逻辑 (预留)
-  void _handlePayment(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Payment Gateway Coming Soon"), backgroundColor: Color(0xFF00B09B)),
-    );
+  // 🔥 Calculate Next Rent Due Date (Same logic as Landlord)
+  String _getNextPaymentDate(int paymentDay) {
+    DateTime now = DateTime.now();
+    DateTime targetDate = DateTime(now.year, now.month, paymentDay);
+    
+    if (now.day > paymentDay) {
+      targetDate = DateTime(now.year, now.month + 1, paymentDay);
+    }
+    
+    return DateFormat('dd MMM yyyy').format(targetDate);
   }
 
-  // 🔥🔥🔥 核心 1：通用毛玻璃确认弹窗 🔥🔥🔥
+  // 🔥🔥🔥 Core: Stripe Payment Logic (Auto-Fetch Price from Property) 🔥🔥🔥
+  Future<void> _handlePayment(BuildContext context) async {
+    setState(() {
+      _isPaying = true;
+    });
+
+    try {
+      debugPrint("Full booking data: ${widget.bookingData}");
+
+      // 1. Try to find price in current booking data
+      dynamic rawPrice = widget.bookingData['price'] ?? 
+                         widget.bookingData['rent'] ?? 
+                         widget.bookingData['amount'] ??
+                         widget.bookingData['monthlyRent'];
+
+      // 2. Backup: If price is missing, fetch from 'properties' collection
+      if (rawPrice == null) {
+        String? propertyId = widget.bookingData['propertyId'];
+        if (propertyId != null) {
+          debugPrint("Price missing in booking. Fetching from Property: $propertyId");
+          
+          final propertyDoc = await FirebaseFirestore.instance
+              .collection('properties')
+              .doc(propertyId)
+              .get();
+
+          if (propertyDoc.exists) {
+            final pData = propertyDoc.data();
+            rawPrice = pData?['price'] ?? pData?['monthlyRent'] ?? pData?['rent'];
+            debugPrint("Found price in Property document: $rawPrice");
+          }
+        }
+      }
+
+      // 3. If still null, throw error
+      if (rawPrice == null) {
+        throw Exception("System cannot find price in Booking OR Property database.");
+      }
+
+      // 4. Data Cleaning
+      String priceStr = rawPrice.toString();
+      priceStr = priceStr.replaceAll(RegExp(r'[^0-9.]'), '');
+      
+      double rentPrice = double.tryParse(priceStr) ?? 0.0;
+      debugPrint("Final parsed price: $rentPrice");
+
+      if (rentPrice <= 0.5) { 
+        throw Exception("Invalid price amount: $rentPrice");
+      }
+
+      // 5. Start Payment via Stripe Service
+      bool success = await StripeService.instance.makePayment(rentPrice);
+
+      if (success) {
+        // ✅ Payment Success
+        if (widget.docId != null) {
+          await FirebaseFirestore.instance.collection('bookings').doc(widget.docId).update({
+            'status': 'completed',       
+            'paymentStatus': 'paid',     
+            'isActiveTenant': true,      
+            'paymentDate': FieldValue.serverTimestamp(),
+            'isReadByLandlord': false,
+            // Write the fetched price back to booking for future reference
+            'price': rentPrice, 
+          });
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Payment Successful! Welcome home. 🎉"),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Payment Cancelled."),
+              backgroundColor: Colors.orangeAccent,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint("Error paying: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPaying = false;
+        });
+      }
+    }
+  }
+
+  // Confirm Dialog (Glassmorphism)
   Future<bool?> _showConfirmDialog({
     required String title,
     required String content,
@@ -132,7 +242,7 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
     );
   }
 
-  // 🔥🔥🔥 核心 2：租客主动请求撤销 (新增) 🔥🔥🔥
+  // Tenant Request Deletion
   Future<void> _requestDeletion() async {
     if (widget.docId == null) return;
 
@@ -146,17 +256,14 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
       await FirebaseFirestore.instance.collection('bookings').doc(widget.docId).update({
         'deletionRequest': 'pending',
         'deletionRequestedBy': 'tenant',
-        
-        // 🔥🔥 关键：强制改变状态，房东首页才能收到红点！🔥🔥
         'status': 'cancellation_pending', 
         'isReadByLandlord': false, 
       });
-      
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Cancellation request sent.")));
     }
   }
 
-  // 🔥🔥🔥 核心 3：高级毛玻璃横幅构建器 🔥🔥🔥
+  // Glass Banner
   Widget _buildGlassBanner({
     required BuildContext context,
     required String text,
@@ -198,7 +305,7 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
                 Row(
                   children: [
                     InkWell(
-                      onTap: onKeep,
+                      onTap: onKeep, 
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         child: Text("Keep", style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11)),
@@ -233,7 +340,7 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
     );
   }
 
-  // ✅ 申请弹窗逻辑 (已修复通知红点)
+  // Application Dialog
   void _showApplicationDialog(BuildContext context) {
     final TextEditingController noteController = TextEditingController();
     DateTime selectedStartDate = DateTime.now();
@@ -263,7 +370,7 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
                 children: [
                   const Text("📝 Rental Application", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
                   const SizedBox(height: 16),
-                  // ... (日期选择器 UI 保持不变) ...
+                  
                   const Text("Start Date", style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 6),
                   GestureDetector(
@@ -356,7 +463,6 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
                                   'appliedAt': Timestamp.now(),
                                   'leaseStartDate': Timestamp.fromDate(selectedStartDate),
                                   'leaseEndDate': Timestamp.fromDate(endDate),
-                                  // 🔥🔥 关键：通知房东 🔥🔥
                                   'isReadByLandlord': false,
                               });
                               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Application Sent!"), backgroundColor: Colors.green));
@@ -400,7 +506,7 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
     IconData currentStatusIcon = widget.statusIcon;
     String displayStatus = status.toUpperCase().replaceAll('_', ' ');
 
-    // ✅ 新增状态 UI 逻辑
+    // ✅ UI Status Logic
     if (status == 'application_pending') {
       currentStatusColor = Colors.orangeAccent; currentStatusIcon = Icons.hourglass_top; displayStatus = "PENDING";
     } else if (status == 'tenant_signed') {
@@ -408,8 +514,10 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
     } else if (status == 'awaiting_payment') {
       currentStatusColor = const Color(0xFF00BFA5); currentStatusIcon = Icons.verified_user; displayStatus = "FINALIZED";
     } else if (status == 'cancellation_pending') {
-      // ✅ 正在撤销中的状态
       currentStatusColor = Colors.redAccent; currentStatusIcon = Icons.delete_forever; displayStatus = "CANCELLING...";
+    } else if (status == 'completed') {
+      // ✅ Completed State
+      currentStatusColor = Colors.greenAccent; currentStatusIcon = Icons.check_circle; displayStatus = "RENTED";
     }
 
     return Padding(
@@ -418,7 +526,7 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
         child: Column(
           children: [
             
-            // ✅ 场景 A: 收到房东撤销请求 (高级毛玻璃横幅)
+            // ✅ Scenario A: Landlord requested deletion
             if (showIncomingRequest)
               _buildGlassBanner(
                 context: context,
@@ -441,13 +549,12 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
                      confirmText: "Delete",
                    );
                    if (confirm == true) {
-                     // 租客确认房东的删除请求，可以选择直接删除，或者设为 cancelled
                      await FirebaseFirestore.instance.collection('bookings').doc(widget.docId).delete();
                    }
                 }
               ),
 
-            // ✅ 场景 B: 等待房东确认 (灰色提示)
+            // ✅ Scenario B: Waiting for landlord
             if (showWaitingMessage)
               Container(
                 width: double.infinity,
@@ -471,7 +578,7 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
                 ),
               ),
 
-            // 卡片主体 (折叠动画)
+            // Main Card Body
             AnimatedSize(
               duration: const Duration(milliseconds: 300),
               curve: Curves.fastOutSlowIn,
@@ -521,9 +628,13 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
                       ],
                     ),
 
-                    // Action Bar (操作栏)
-                    // ✅ 在 Pending, Approved, Ready to Sign 等状态显示按钮
-                    if (['pending', 'approved', 'ready_to_sign', 'awaiting_payment'].contains(status)) ...[
+                    // ✅ 2. Rented Info (Show if completed and expanded)
+                    if (status == 'completed' && _isExpanded) 
+                      _buildRentedInfo(widget.bookingData),
+
+                    // Action Bar
+                    // ✅ Show actions for specific statuses, including 'completed'
+                    if (['pending', 'approved', 'ready_to_sign', 'awaiting_payment', 'completed'].contains(status)) ...[
                       const SizedBox(height: 5),
                       _buildActionBar(context, status),
                     ],
@@ -577,6 +688,55 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
     );
   }
 
+  // ✅ New Helper: Rented Info (Safe Int Parsing)
+  Widget _buildRentedInfo(Map<String, dynamic> data) {
+    // Parse Lease Dates
+    final Timestamp? start = data['leaseStartDate'];
+    final Timestamp? end = data['leaseEndDate'];
+    
+    // 🛠️ Safe Parsing: Ensure conversion to String then to Int
+    final int payDay = int.tryParse(data['monthlyPaymentDay']?.toString() ?? '1') ?? 1;
+
+    String leasePeriod = "Unknown";
+    if (start != null && end != null) {
+      leasePeriod = "${DateFormat('MMM yyyy').format(start.toDate())} - ${DateFormat('MMM yyyy').format(end.toDate())}";
+    }
+
+    String nextPayDate = _getNextPaymentDate(payDay);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF00E676).withOpacity(0.1), // Green Background
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF00E676).withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text("Lease Period", style: TextStyle(color: Colors.white54, fontSize: 9)),
+              const SizedBox(height: 2),
+              Text(leasePeriod, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          Container(width: 1, height: 20, color: Colors.white24),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              const Text("Next Rent Due", style: TextStyle(color: Colors.greenAccent, fontSize: 9)),
+              const SizedBox(height: 2),
+              Text(nextPayDate, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSectionContainer({required IconData icon, required String title, required Widget content}) {
     return Container(
       width: double.infinity,
@@ -604,7 +764,7 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
   }
 
   Widget _buildActionBar(BuildContext context, String status) {
-    // 1. Pending: 只有撤销
+    // 1. Pending
     if (status == 'pending') {
       return SizedBox(
         width: double.infinity,
@@ -616,19 +776,18 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
           ),
           icon: const Icon(Icons.cancel_outlined, size: 12),
           label: const Text("Cancel Request", style: TextStyle(fontSize: 10)),
-          onPressed: _requestDeletion, // 触发主动撤销
+          onPressed: _requestDeletion, 
         ),
       );
     }
     
-    // 2. Approved: 申请租房 或 撤销
+    // 2. Approved
     else if (status == 'approved') {
       return Row(
         children: [
           Expanded(
             child: SizedBox(
               height: 28, 
-              // 触发撤销
               child: OutlinedButton(
                 onPressed: _requestDeletion, 
                 style: OutlinedButton.styleFrom(
@@ -645,7 +804,6 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
           Expanded(
             child: SizedBox(
               height: 28, 
-              // 触发申请
               child: _buildGradientButton("Apply Now", const [Color(0xFF1D5DC7), Color(0xFF1E88E5)], () => _showApplicationDialog(context)),
             ),
           ),
@@ -653,7 +811,7 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
       );
     } 
 
-    // 3. Ready to Sign: 签合同
+    // 3. Ready to Sign
     else if (status == 'ready_to_sign') {
       return SizedBox(
         height: 28,
@@ -667,7 +825,7 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
       );
     } 
 
-    // 4. Awaiting Payment: 支付
+    // 4. Awaiting Payment
     else if (status == 'awaiting_payment') {
       return Row(
         children: [
@@ -687,12 +845,50 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
           Expanded(
             child: SizedBox(
               height: 28,
-              child: _buildGradientButton("Pay Now", const [Color(0xFF00B09B), Color(0xFF96C93D)], () => _handlePayment(context)),
+              // Check _isPaying status
+              child: _isPaying
+                  ? Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)))
+                  : _buildGradientButton("Pay Now", const [Color(0xFF00B09B), Color(0xFF96C93D)], () => _handlePayment(context)),
             ),
           ),
         ],
       );
     }
+
+    // 5. ✅ Completed: Show Contract & Receipt
+    else if (status == 'completed') {
+      return Row(
+        children: [
+          Expanded(
+            child: SizedBox(
+              height: 28,
+              child: _buildGlassyButton("View Contract", () {
+                 final String urlZh = widget.bookingData['contractUrlZh'] ?? widget.bookingData['contractUrl'] ?? '';
+                 final String urlEn = widget.bookingData['contractUrlEn'] ?? widget.bookingData['contractUrl'] ?? '';
+                 Navigator.push(context, MaterialPageRoute(
+                   builder: (_) => FinalContractViewerScreen(contractUrlZh: urlZh, contractUrlEn: urlEn),
+                 ));
+              }),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: SizedBox(
+              height: 28,
+              // View Receipt Button
+              child: _buildGradientButton("View Receipt", const [Color(0xFF11998e), Color(0xFF38ef7d)], () {
+                if (widget.docId != null) {
+                  Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => ReceiptScreen(bookingData: widget.bookingData, bookingId: widget.docId!),
+                  ));
+                }
+              }),
+            ),
+          ),
+        ],
+      );
+    }
+
     return const SizedBox.shrink();
   }
 

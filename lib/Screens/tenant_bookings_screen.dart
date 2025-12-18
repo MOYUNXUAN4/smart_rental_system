@@ -4,9 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-// ✅ 引入新的弹窗工具 (请确保该文件已创建并在正确的路径)
+// ✅ 引入弹窗工具
 import '../Compoents/glass_dialog_helper.dart';
-// 引入卡片组件
+// 引入租客卡片组件
 import '../Compoents/tenant_booking_card.dart'; 
 
 class TenantBookingsScreen extends StatefulWidget {
@@ -44,7 +44,7 @@ class _TenantBookingsScreenState extends State<TenantBookingsScreen> {
       }
       await batch.commit();
     } catch (e) {
-      print("Error marking as read: $e");
+      debugPrint("Error marking as read: $e");
     }
   }
 
@@ -91,27 +91,49 @@ class _TenantBookingsScreenState extends State<TenantBookingsScreen> {
 
                 final docs = snapshot.data!.docs;
 
-                // --- 数据分类 ---
+                // --- 🔥 数据分类逻辑 (与房东端保持一致) ---
+                
+                // 1. Currently Rented (✅ 新增：已完成出租)
+                final rentedList = docs.where((d) => d['status'] == 'completed').toList();
+
+                // 2. Ready to Pay (待付款)
                 final payList = docs.where((d) => d['status'] == 'awaiting_payment').toList();
+
+                // 3. Ready to Sign (待签约)
                 final signList = docs.where((d) => d['status'] == 'ready_to_sign' || d['status'] == 'tenant_signed').toList();
+
+                // 4. Active / To Meet (申请中/待看房)
                 final meetList = docs.where((d) => 
                     d['status'] == 'pending' || 
                     d['status'] == 'approved' || 
                     d['status'] == 'application_pending'
                 ).toList();
+
+                // 5. History (历史：拒绝/取消) 
+                // ⚠️ 注意：completed 移到了 rentedList，这里不再包含
                 final historyList = docs.where((d) => 
                     d['status'] == 'rejected' || 
-                    d['status'] == 'completed' || 
                     d['status'] == 'cancelled'
                 ).toList();
 
-                if (payList.isEmpty && signList.isEmpty && meetList.isEmpty && historyList.isEmpty) {
+                if (rentedList.isEmpty && payList.isEmpty && signList.isEmpty && meetList.isEmpty && historyList.isEmpty) {
                   return _buildEmptyState();
                 }
 
                 return ListView(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   children: [
+                    // ✅ 1. 当前租约 (最上方)
+                    if (rentedList.isNotEmpty)
+                      _GlassSection(
+                        title: "Currently Rented",
+                        count: rentedList.length,
+                        icon: Icons.vpn_key,
+                        color: const Color(0xFF00E676), // 亮绿色
+                        children: rentedList.map((doc) => _buildItem(doc)).toList(),
+                      ),
+
+                    // 2. 待付款
                     if (payList.isNotEmpty)
                       _GlassSection(
                         title: "Ready to Pay",
@@ -121,6 +143,7 @@ class _TenantBookingsScreenState extends State<TenantBookingsScreen> {
                         children: payList.map((doc) => _buildItem(doc)).toList(),
                       ),
 
+                    // 3. 待签约
                     if (signList.isNotEmpty)
                       _GlassSection(
                         title: "Ready to Sign",
@@ -130,6 +153,7 @@ class _TenantBookingsScreenState extends State<TenantBookingsScreen> {
                         children: signList.map((doc) => _buildItem(doc)).toList(),
                       ),
 
+                    // 4. 申请/看房
                     if (meetList.isNotEmpty)
                       _GlassSection(
                         title: "Active / To Meet",
@@ -139,6 +163,7 @@ class _TenantBookingsScreenState extends State<TenantBookingsScreen> {
                         children: meetList.map((doc) => _buildItem(doc)).toList(),
                       ),
 
+                    // 5. 历史记录
                     if (historyList.isNotEmpty)
                       _GlassSection(
                         title: "History",
@@ -159,7 +184,7 @@ class _TenantBookingsScreenState extends State<TenantBookingsScreen> {
     );
   }
 
-  // 🔥 核心修改：带有统一毛玻璃弹窗的 Item 构建方法
+  // 🔥 带有统一毛玻璃弹窗的 Item 构建方法
   Widget _buildItem(QueryDocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     final String status = data['status'] ?? '';
@@ -169,8 +194,9 @@ class _TenantBookingsScreenState extends State<TenantBookingsScreen> {
     final String? deletionRequest = data['deletionRequest'];
     final String? requestedBy = data['deletionRequestedBy'];
 
-    // 定义哪些是历史订单 (可以直接物理删除)
-    bool isHistory = ['rejected', 'cancelled', 'completed'].contains(status);
+    // 定义历史订单 (rejected, cancelled)
+    // ⚠️ completed 现在属于"活跃租约"，不能直接物理删除
+    bool isHistory = ['rejected', 'cancelled'].contains(status);
 
     return Dismissible(
       key: Key(docId),
@@ -203,7 +229,7 @@ class _TenantBookingsScreenState extends State<TenantBookingsScreen> {
           return false; // 禁止滑动
         }
 
-        // 2. 场景 A: 历史订单 -> 物理删除弹窗 (使用 glass_dialog_helper)
+        // 2. 场景 A: 历史订单 -> 物理删除弹窗
         if (isHistory) {
           return await showGlassConfirmDialog(
             context: context,
@@ -211,18 +237,21 @@ class _TenantBookingsScreenState extends State<TenantBookingsScreen> {
             content: "Are you sure you want to permanently delete this record? This cannot be undone.",
             confirmBtnText: "Delete",
             icon: Icons.delete_forever,
-            isDestructive: true, // 红色主题
+            isDestructive: true, 
           );
         }
 
-        // 3. 场景 B: 进行中订单 -> 发起撤销请求弹窗
+        // 3. 场景 B: 进行中/已出租订单 -> 发起撤销请求弹窗
+        // 这里的文案修改为 "Terminate Lease" 更加贴切
         bool? confirm = await showGlassConfirmDialog(
           context: context,
-          title: "Request Cancellation?",
-          content: "Order is active. Send a request to the Landlord to CANCEL this booking?",
+          title: status == 'completed' ? "Terminate Lease?" : "Request Cancellation?",
+          content: status == 'completed' 
+              ? "Do you want to request early termination of your lease? The landlord will be notified."
+              : "Order is active. Send a request to the Landlord to CANCEL this booking?",
           confirmBtnText: "Send Request",
           icon: Icons.outgoing_mail,
-          isDestructive: false, // 蓝色/橙色主题
+          isDestructive: false, 
         );
 
         if (confirm == true) {
@@ -232,22 +261,22 @@ class _TenantBookingsScreenState extends State<TenantBookingsScreen> {
             'deletionRequestedBy': 'tenant' 
           });
           if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Cancellation request sent.")));
-          return false; // 不直接删除列表项，而是变成等待状态
+          return false; // 不直接删除列表项
         }
         return false;
       },
 
-      // 只有 confirmDismiss 返回 true 时（即历史订单确认删除后）才会执行这里
       onDismissed: (direction) async {
         if (isHistory) {
           await FirebaseFirestore.instance.collection('bookings').doc(docId).delete();
         }
       },
 
-      // 你的原始卡片组件
+      // 卡片组件
       child: TenantBookingCard(
         bookingData: data,
         docId: docId,
+        // 这里传入默认颜色，实际颜色由 Card 内部根据 status 决定
         statusColor: Colors.white, 
         statusIcon: Icons.circle,
       ),
@@ -269,7 +298,7 @@ class _TenantBookingsScreenState extends State<TenantBookingsScreen> {
 }
 
 // ==============================================
-// 🔥 纯展示型毛玻璃分组组件
+// 🔥 纯展示型毛玻璃分组组件 (复用)
 // ==============================================
 class _GlassSection extends StatelessWidget {
   final String title;
