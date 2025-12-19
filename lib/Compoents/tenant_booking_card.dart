@@ -63,7 +63,7 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
     return DateFormat('dd MMM yyyy').format(targetDate);
   }
 
-  // 🔥🔥🔥 Core: Stripe Payment Logic (Updated with Batch Write) 🔥🔥🔥
+  // 🔥🔥🔥 Core: Stripe Payment Logic (已优化：拆分更新，防崩溃) 🔥🔥🔥
   Future<void> _handlePayment(BuildContext context) async {
     setState(() {
       _isPaying = true;
@@ -72,13 +72,13 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
     try {
       debugPrint("Full booking data: ${widget.bookingData}");
 
-      // 1. Try to find price in current booking data
+      // 1. 获取价格逻辑
       dynamic rawPrice = widget.bookingData['price'] ?? 
                          widget.bookingData['rent'] ?? 
                          widget.bookingData['amount'] ??
                          widget.bookingData['monthlyRent'];
 
-      // 2. Backup: If price is missing, fetch from 'properties' collection
+      // 2. 如果Booking里没有价格，去Property表里查
       if (rawPrice == null) {
         String? propertyId = widget.bookingData['propertyId'];
         if (propertyId != null) {
@@ -97,12 +97,12 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
         }
       }
 
-      // 3. If still null, throw error
+      // 3. 还没找到就报错
       if (rawPrice == null) {
         throw Exception("System cannot find price in Booking OR Property database.");
       }
 
-      // 4. Data Cleaning
+      // 4. 数据清洗
       String priceStr = rawPrice.toString();
       priceStr = priceStr.replaceAll(RegExp(r'[^0-9.]'), '');
       
@@ -113,41 +113,44 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
         throw Exception("Invalid price amount: $rentPrice");
       }
 
-      // 5. Start Payment via Stripe Service
+      // 5. 调用 Stripe 支付
       bool success = await StripeService.instance.makePayment(rentPrice);
 
       if (success) {
-        // ✅ Payment Success Logic
+        // ✅ 支付成功后的逻辑
         if (widget.docId != null) {
           
-          // 🔥🔥🔥 核心修改开始：使用 Batch 同时更新订单和房源状态 🔥🔥🔥
-          WriteBatch batch = FirebaseFirestore.instance.batch();
-
-          // A. 更新 Booking 表状态 -> Completed
-          DocumentReference bookingRef = FirebaseFirestore.instance.collection('bookings').doc(widget.docId);
-          batch.update(bookingRef, {
-            'status': 'completed',       
-            'paymentStatus': 'paid',     
-            'isActiveTenant': true,      
-            'paymentDate': FieldValue.serverTimestamp(),
-            'isReadByLandlord': false,
-            // Write the fetched price back to booking for future reference
-            'price': rentPrice, 
-          });
-
-          // B. 更新 Property 表状态 -> Rented (这一步让房源从列表消失)
-          String? propertyId = widget.bookingData['propertyId'];
-          if (propertyId != null) {
-            DocumentReference propertyRef = FirebaseFirestore.instance.collection('properties').doc(propertyId);
-            batch.update(propertyRef, {
-              'status': 'rented', // 🚨 状态改为已出租
-              'tenantUid': widget.bookingData['tenantUid'], // 可选：记录当前租客ID
+          // 🔥🔥🔥 第一步：必须优先更新 Booking 状态 (Critical) 🔥🔥🔥
+          try {
+            await FirebaseFirestore.instance.collection('bookings').doc(widget.docId).update({
+              'status': 'completed',       
+              'paymentStatus': 'paid',     
+              'isActiveTenant': true,      
+              'paymentDate': FieldValue.serverTimestamp(),
+              'isReadByLandlord': false,
+              'price': rentPrice, 
             });
+            debugPrint("✅ Booking status updated to 'completed'.");
+          } catch (e) {
+            // 如果连 Booking 都更新失败，那确实是大问题，抛出错误提示用户
+            throw Exception("Payment successful but failed to update order: $e");
           }
 
-          // C. 提交所有更改
-          await batch.commit();
-          // 🔥🔥🔥 核心修改结束 🔥🔥🔥
+          // 🔥🔥🔥 第二步：尝试更新房源状态 (Non-Critical) 🔥🔥🔥
+          // 即使这一步因为权限失败，也不会影响用户看到“支付成功”
+          String? propertyId = widget.bookingData['propertyId'];
+          if (propertyId != null) {
+            try {
+              await FirebaseFirestore.instance.collection('properties').doc(propertyId).update({
+                'status': 'rented', // 改为已出租
+                'tenantUid': widget.bookingData['tenantUid'],
+              });
+              debugPrint("✅ Property status updated to 'rented'.");
+            } catch (e) {
+              // ⚠️ 捕获错误但不打断流程
+              debugPrint("⚠️ Warning: Could not update property status (Permission Denied?): $e");
+            }
+          }
         }
 
         if (mounted) {
