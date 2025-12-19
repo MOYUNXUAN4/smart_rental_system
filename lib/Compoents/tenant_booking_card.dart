@@ -5,12 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 // ✅ Import relevant screens and services
+// 确保这些引用的路径与你的项目结构一致
 import '../Screens/final_contract_viewer_screen.dart';
-import '../Screens/receipt_screen.dart'; // ✅ Added Receipt Screen
+import '../Screens/receipt_screen.dart';
 import '../Services/stripe_service.dart';
 import 'glass_card.dart';
 import 'shared_contract_signing_screen.dart';
-
 
 class TenantBookingCard extends StatefulWidget {
   final Map<String, dynamic> bookingData;
@@ -63,7 +63,7 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
     return DateFormat('dd MMM yyyy').format(targetDate);
   }
 
-  // 🔥🔥🔥 Core: Stripe Payment Logic (Auto-Fetch Price from Property) 🔥🔥🔥
+  // 🔥🔥🔥 Core: Stripe Payment Logic (Updated with Batch Write) 🔥🔥🔥
   Future<void> _handlePayment(BuildContext context) async {
     setState(() {
       _isPaying = true;
@@ -117,9 +117,15 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
       bool success = await StripeService.instance.makePayment(rentPrice);
 
       if (success) {
-        // ✅ Payment Success
+        // ✅ Payment Success Logic
         if (widget.docId != null) {
-          await FirebaseFirestore.instance.collection('bookings').doc(widget.docId).update({
+          
+          // 🔥🔥🔥 核心修改开始：使用 Batch 同时更新订单和房源状态 🔥🔥🔥
+          WriteBatch batch = FirebaseFirestore.instance.batch();
+
+          // A. 更新 Booking 表状态 -> Completed
+          DocumentReference bookingRef = FirebaseFirestore.instance.collection('bookings').doc(widget.docId);
+          batch.update(bookingRef, {
             'status': 'completed',       
             'paymentStatus': 'paid',     
             'isActiveTenant': true,      
@@ -128,6 +134,20 @@ class _TenantBookingCardState extends State<TenantBookingCard> with SingleTicker
             // Write the fetched price back to booking for future reference
             'price': rentPrice, 
           });
+
+          // B. 更新 Property 表状态 -> Rented (这一步让房源从列表消失)
+          String? propertyId = widget.bookingData['propertyId'];
+          if (propertyId != null) {
+            DocumentReference propertyRef = FirebaseFirestore.instance.collection('properties').doc(propertyId);
+            batch.update(propertyRef, {
+              'status': 'rented', // 🚨 状态改为已出租
+              'tenantUid': widget.bookingData['tenantUid'], // 可选：记录当前租客ID
+            });
+          }
+
+          // C. 提交所有更改
+          await batch.commit();
+          // 🔥🔥🔥 核心修改结束 🔥🔥🔥
         }
 
         if (mounted) {

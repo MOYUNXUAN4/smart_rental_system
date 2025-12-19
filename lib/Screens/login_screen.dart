@@ -1,13 +1,14 @@
 import 'dart:ui';
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
-// --- 检查导入路径 ---
-import 'register_screen.dart';
-import 'home_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+
 import '../Compoents/animated_bottom_nav.dart';
-import '../Services/account_check_screen.dart'; 
-// --- 导入结束 ---
+import '../Services/account_check_screen.dart';
+import 'forgot_password_screen.dart'; // 🔥 确保导入了找回密码页面
+import 'home_screen.dart';
+// ✅ 导入相关屏幕
+import 'register_screen.dart'; 
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -22,8 +23,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   String _selectedType = "Tenant"; 
   bool _isLoading = false;
-
-  // ✅ 【修复 2 - 动画】: 重新引入状态变量，并初始化为 3
   int _currentNavIndex = 3; 
 
   @override
@@ -33,22 +32,19 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  // ✅ 【修复 1 - 登录导航】: 
-  // 登录成功后，手动导航到 AccountCheckScreen
+  // 登录逻辑
   Future<void> _login() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      // 步骤 1: 登录
       await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
 
-      // 步骤 2: 登录成功后，手动导航到 AccountCheckScreen
-      // (这是我们从“点击 Account 按钮”中学到的有效逻辑)
       if (mounted) {
-        Navigator.pushReplacement( // 使用 pushReplacement 替换登录页
+        // 登录成功，跳转到账户检查/分发页面
+        Navigator.pushReplacement( 
           context,
           MaterialPageRoute(builder: (context) => const AccountCheckScreen()),
         );
@@ -56,8 +52,12 @@ class _LoginScreenState extends State<LoginScreen> {
       
     } on FirebaseAuthException catch (e) {
       if (mounted) {
+        String message = "Login failed";
+        if (e.code == 'user-not-found') message = "User not found";
+        else if (e.code == 'wrong-password') message = "Incorrect password";
+        
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Login failed: ${e.message ?? "Unknown error"}')),
+          SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
         );
       }
     } finally {
@@ -65,29 +65,23 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // ✅ 【修复 2 - 动画】: 
-  // 在导航前调用 setState 来更新 _currentNavIndex
+  // 底部导航栏逻辑
   void _onNavTap(int index) {
-    // 立即更新状态以触发动画
     setState(() {
       _currentNavIndex = index;
     });
 
     if (index == 0) {
-      // 点击 Home
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const HomeScreen()),
       );
     } else if (index == 3) {
-      // 点击 Account (当前页)
-      // 导航到 AccountCheckScreen (允许用户在已登录时刷新状态)
       Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => const AccountCheckScreen()),
       );
     }
-    // 其他索引 (List, Favorites) 仅触发动画，不导航
   }
 
   @override
@@ -197,14 +191,31 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 16),
 
-                        // 找回密码 / 注册
+                        // 🔥 修改部分：找回密码 / 注册
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            TextButton(
-                              onPressed: () { /* TODO: 实现找回密码 */ },
-                              child: const Text("Find Password", style: TextStyle(color: Colors.white70)),
+                            // 找回密码按钮
+                            GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const ForgotPasswordScreen(),
+                                  ),
+                                );
+                              },
+                              child: const Text(
+                                "Forgot Password?",
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  decoration: TextDecoration.underline, // 加下划线提示可点击
+                                  decorationColor: Colors.white70,
+                                ),
+                              ),
                             ),
+                            
+                            // 注册按钮
                             TextButton(
                               onPressed: () {
                                 Navigator.push(
@@ -214,7 +225,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                 );
                               },
-                              child: const Text("Register", style: TextStyle(color: Colors.white)),
+                              child: const Text(
+                                "Register", 
+                                style: TextStyle(
+                                  color: Colors.white, 
+                                  fontWeight: FontWeight.bold
+                                )
+                              ),
                             ),
                           ],
                         ),
@@ -227,7 +244,6 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ],
       ),
-      // ✅ 【修复 2 - 动画】: 使用 _currentNavIndex 状态变量
       bottomNavigationBar: AnimatedBottomNav(
         currentIndex: _currentNavIndex, 
         onTap: _onNavTap,
@@ -241,8 +257,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // --- 辅助 Widget (保持不变) ---
-
+  // --- 辅助 Widget ---
   Widget _buildUserTypeButton(String type) {
     final bool isSelected = _selectedType == type;
     return Expanded(
@@ -253,15 +268,9 @@ class _LoginScreenState extends State<LoginScreen> {
           });
         },
         style: ElevatedButton.styleFrom(
-          backgroundColor: isSelected
-              ? Colors.white
-              : Colors.white.withOpacity(0.2),
-          foregroundColor: isSelected
-              ? const Color(0xFF1D5DC7)
-              : Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15),
-          ),
+          backgroundColor: isSelected ? Colors.white : Colors.white.withOpacity(0.2),
+          foregroundColor: isSelected ? const Color(0xFF1D5DC7) : Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
           elevation: isSelected ? 8.0 : 2.0,
         ),
         child: Text(type),
@@ -281,7 +290,7 @@ class _LoginScreenState extends State<LoginScreen> {
       style: const TextStyle(color: Colors.white),
       decoration: InputDecoration(
         hintText: hintText,
-        hintStyle: TextStyle(color: Colors.white70),
+        hintStyle: const TextStyle(color: Colors.white70),
         prefixIcon: Icon(icon, color: Colors.white70),
         filled: true,
         fillColor: Colors.white.withOpacity(0.1),

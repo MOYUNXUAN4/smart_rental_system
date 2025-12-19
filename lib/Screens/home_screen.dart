@@ -4,22 +4,22 @@ import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:smart_rental_system/Compoents/property_card.dart';
-// 导入其他屏幕
+// 导入页面
 import 'package:smart_rental_system/Screens/property_list_screen.dart';
 import 'package:smart_rental_system/Screens/search_screen.dart';
 import 'package:smart_rental_system/screens/favorite_screen.dart';
+import 'package:smart_rental_system/screens/landlord_bookings_screen.dart';
 import 'package:smart_rental_system/screens/landlord_inbox_screen.dart';
+import 'package:smart_rental_system/screens/landlord_screen.dart';
 import 'package:smart_rental_system/screens/property_detail_screen.dart';
+import 'package:smart_rental_system/screens/tenant_bookings_screen.dart';
+import 'package:smart_rental_system/screens/tenant_screen.dart';
 
 // 导入组件
 import '../Compoents/animated_bottom_nav.dart';
 import '../Compoents/glass_card.dart';
-// 导入预约页面
-import 'landlord_bookings_screen.dart';
-import 'landlord_screen.dart';
-import 'tenant_bookings_screen.dart';
-import 'tenant_screen.dart';
+import '../Compoents/property_card.dart'; 
+// ❌ 已删除 swipe_property_deck.dart 的引用
 
 class HomeScreen extends StatefulWidget {
   final String userRole;
@@ -103,6 +103,7 @@ class _HomeScreenState extends State<HomeScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
+          // 背景
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -159,8 +160,7 @@ class _HomeContentState extends State<_HomeContent> {
       _userStream = FirebaseFirestore.instance.collection('users').doc(_uid).snapshots();
 
       if (isLandlord) {
-        // ✅ 房东通知逻辑 (修改版)
-        // 只有当 isReadByLandlord == false (未读) 时才显示红点
+        // 房东通知逻辑
         _notificationStream = FirebaseFirestore.instance
             .collection('bookings')
             .where('landlordUid', isEqualTo: _uid)
@@ -170,10 +170,10 @@ class _HomeContentState extends State<_HomeContent> {
               'tenant_signed',        
               'cancellation_pending'  
             ])
-            .where('isReadByLandlord', isEqualTo: false) // 🔥 新增：只看未读
+            .where('isReadByLandlord', isEqualTo: false)
             .snapshots();
       } else {
-        // ✅ 租客通知逻辑
+        // 租客通知逻辑
         _notificationStream = FirebaseFirestore.instance
             .collection('bookings')
             .where('tenantUid', isEqualTo: _uid)
@@ -243,14 +243,10 @@ class _HomeContentState extends State<_HomeContent> {
           pinned: true,
           expandedHeight: expandedAppBarHeight,
           actions: [
+            // 通知图标
             StreamBuilder<QuerySnapshot>(
               stream: _notificationStream, 
               builder: (context, snapshot) {
-                // 简单的调试信息，如果出错了会在控制台看到
-                if (snapshot.hasError) {
-                   print("🛑 Notification Error: ${snapshot.error}");
-                }
-
                 int count = 0;
                 if (snapshot.hasData) {
                   count = snapshot.data!.docs.length; 
@@ -274,6 +270,7 @@ class _HomeContentState extends State<_HomeContent> {
               }
             ),
             
+            // 头像
             StreamBuilder<DocumentSnapshot>(
               stream: _userStream,
               builder: (context, snapshot) {
@@ -345,6 +342,7 @@ class _HomeContentState extends State<_HomeContent> {
                     ),
                   ),
                 ),
+                // 搜索框
                 Positioned(
                   left: 24,
                   right: 24,
@@ -409,9 +407,12 @@ class _HomeContentState extends State<_HomeContent> {
             ),
           ),
         ), 
+        
+        // 内容列表
         SliverList(
           delegate: SliverChildListDelegate([
             const SizedBox(height: 8),
+            // 功能按钮
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
               child: Row(
@@ -428,24 +429,10 @@ class _HomeContentState extends State<_HomeContent> {
             ),
             const SizedBox(height: 24.0),
             
+            // 原有的随机推荐卡片 (Recommended For You)
             _buildRecommendedPropertyCard(context),
             
-            const SizedBox(height: 16.0),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Row(
-                children: [
-                  Expanded(
-                      child: _buildAreaCard(context, "Popular Areas", 52,
-                          1500, "City Life & Dining")),
-                  const SizedBox(width: 16.0),
-                  Expanded(
-                      child: _buildAreaCard(context, "Bangsar", 37, 1200,
-                          "Student Friendly")),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24.0),
+            // ✅ 下面全部留白，不做其他展示
             SizedBox(height: MediaQuery.of(context).size.height * 0.15),
           ]),
         ),
@@ -494,6 +481,8 @@ class _HomeContentState extends State<_HomeContent> {
           return const SizedBox.shrink(); 
         }
         final properties = snapshot.data!.docs;
+        if (properties.isEmpty) return const SizedBox.shrink();
+        
         final randomIndex = Random().nextInt(properties.length);
         final randomPropertyDoc = properties[randomIndex];
         final propertyData = randomPropertyDoc.data() as Map<String, dynamic>;
@@ -536,24 +525,6 @@ class _HomeContentState extends State<_HomeContent> {
           ),
         );
       },
-    );
-  }
-
-  Widget _buildAreaCard(
-      BuildContext context, String title, int listings, int avgPrice, String tag) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Text("• $listings Listings", style: const TextStyle(fontSize: 12, color: Colors.grey)),
-          Text("• Avg: RM$avgPrice/Month", style: const TextStyle(fontSize: 12, color: Colors.grey)),
-          Text("• $tag", style: const TextStyle(fontSize: 12, color: Colors.grey)),
-        ]),
-      ),
     );
   }
 }

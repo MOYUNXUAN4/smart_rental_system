@@ -1,19 +1,20 @@
 import 'dart:io';
-import 'dart:ui'; 
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:ui';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:collection/collection.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:open_file/open_file.dart';
-import 'package:collection/collection.dart'; 
 
 // 引入你的自定义组件
-import '../Compoents/add_property_widgets.dart'; 
-import '../Compoents/panorama_widget.dart';     
+import '../Compoents/add_property_widgets.dart';
 import '../Compoents/contract_generator.dart';
-import '../Compoents/glass_card.dart';          
+import '../Compoents/glass_card.dart';
+import '../Compoents/panorama_widget.dart';          
 
 class AddPropertyScreen extends StatefulWidget {
   final String? propertyId; 
@@ -40,6 +41,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   Map<String, dynamic>? _selectedCommunity;
   Map<String, dynamic> _existingPropertyData = {}; 
   
+  // ✅ 状态管理：现有图片 URL (方便删除)
+  List<String> _existingImageUrls = [];
+  // ✅ 状态管理：新选择的图片文件
   List<XFile> _selectedImages = []; 
   
   XFile? _selected360Image; 
@@ -153,6 +157,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
               (c) => c['name'] == data['communityName'],
             );
           }
+          // ✅ 加载现有图片到列表
+          if (data['imageUrls'] != null) {
+            _existingImageUrls = List<String>.from(data['imageUrls']);
+          }
+          
           _bedrooms = data['bedrooms'] ?? 1;
           _bathrooms = data['bathrooms'] ?? 1;
           _parking = data['parking'] ?? 0;
@@ -178,7 +187,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     final ImagePicker picker = ImagePicker();
     final List<XFile> images = await picker.pickMultiImage(imageQuality: 70, maxWidth: 1024);
     if (images.isNotEmpty) {
-      setState(() { _selectedImages = images; });
+      setState(() { 
+        // 将新选的图片加入列表
+        _selectedImages.addAll(images); 
+      });
     }
   }
 
@@ -274,15 +286,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         language: _generatedContractLanguage,
       );
       
-      // 预览逻辑保持不变
       await OpenFile.open(generatedFile.path);
 
       if (mounted) {
-        // 不需要弹窗确认是否使用了，因为现在只是预览
-        // 或者保留弹窗，但如果确认了，也不需要存文件，只是设置状态为 "系统生成"
         setState(() {
-            // 这里我们不再保存 _selectedContract，因为不需要上传
-            // 我们只标记用户选择了"系统生成"这个意图
             _selectedContract = null; 
             _selectedContractName = "System Generated Template";
             _contractOption = ContractOption.generate; 
@@ -300,10 +307,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     if (_selectedCommunity == null || _selectedDate == null) {
        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please check Community and Date fields.'))); return;
     }
-    bool hasImages = _selectedImages.isNotEmpty;
-    if (_isEditMode && (_existingPropertyData['imageUrls'] as List?)?.isNotEmpty == true) {
-      hasImages = true; 
-    }
+    
+    // 检查：至少有一张图片（包括旧的和新的）
+    bool hasImages = _selectedImages.isNotEmpty || _existingImageUrls.isNotEmpty;
+    
     if (!hasImages) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please add at least one property image.'))); return;
     }
@@ -344,7 +351,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     return await ref.getDownloadURL();
   }
 
-  // ✅ 核心修改：_addProperty
+  // ✅ 核心修改 1：添加房源时带上 status: 'available'
   Future<void> _addProperty() async {
     setState(() => _isLoading = true);
     try {
@@ -353,13 +360,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
 
       final imageUrls = await _uploadImages(_selectedImages);
       
-      // ✅ 仅当选择“手动上传”时，才上传文件
-      // 如果是“系统生成”，contractUrl 设为 null，表示后续流程需动态生成
       String? contractUrl;
       if (_contractOption == ContractOption.upload && _selectedContract != null) {
           contractUrl = await _uploadContract(_selectedContract!);
       } else {
-          // 系统生成模式，或者是 None，不存 URL
           contractUrl = null; 
       }
       
@@ -385,15 +389,13 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         'availableDate': Timestamp.fromDate(_selectedDate!),
         'features': _selectedFeatures.toList(),
         'facilities': _selectedFacilities.toList(),
-        'imageUrls': imageUrls,
-        
-        // 保存合同 URL (如果是上传的)
+        'imageUrls': imageUrls, 
         'contractUrl': contractUrl,
-        
-        // 建议增加一个字段标记是否使用了系统模板，方便后续逻辑判断
         'useSystemContract': (_contractOption == ContractOption.generate),
-
         '360ImageUrl': url360, 
+        
+        // 🔥🔥 关键：设置初始状态为 'available'，确保列表能显示 🔥🔥
+        'status': 'available', 
         'createdAt': Timestamp.now(),
       });
       
@@ -408,10 +410,19 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     }
   }
 
-  // ✅ 核心修改：_updateProperty
+  // ✅ 核心修改 2：更新房源逻辑（修复旧数据状态，并合并新旧图片）
   Future<void> _updateProperty() async {
     setState(() => _isLoading = true);
     try {
+      // 1. 上传新选择的图片
+      List<String> newUploadedUrls = [];
+      if (_selectedImages.isNotEmpty) {
+        newUploadedUrls = await _uploadImages(_selectedImages);
+      }
+      
+      // 2. 合并：用户没删除的旧图片 + 新上传的图片
+      List<String> finalImageUrls = [..._existingImageUrls, ...newUploadedUrls];
+
       Map<String, dynamic> updateData = {
         'communityName': _selectedCommunity!['name'],
         'latitude': (_selectedCommunity!['latitude'] as num?)?.toDouble() ?? 0.0,
@@ -426,18 +437,20 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         'availableDate': Timestamp.fromDate(_selectedDate!),
         'features': _selectedFeatures.toList(),
         'facilities': _selectedFacilities.toList(),
+        // 更新图片列表（包含删除后的结果）
+        'imageUrls': finalImageUrls,
       };
-
-      if (_selectedImages.isNotEmpty) {
-        updateData['imageUrls'] = await _uploadImages(_selectedImages);
-      }
       
-      // ✅ 仅当选择了上传文件，才上传并更新 URL
+      // 🔥🔥 关键：自动修复旧数据 🔥🔥
+      // 如果房源是以前创建的（没有status字段），现在编辑保存时自动加上，让它出现在列表里
+      if (_existingPropertyData['status'] == null) {
+        updateData['status'] = 'available';
+      }
+
       if (_contractOption == ContractOption.upload && _selectedContract != null) {
         updateData['contractUrl'] = await _uploadContract(_selectedContract!);
         updateData['useSystemContract'] = false;
       } else if (_contractOption == ContractOption.generate) {
-        // 如果切回了系统生成，清空之前的 URL
         updateData['contractUrl'] = FieldValue.delete();
         updateData['useSystemContract'] = true;
       }
@@ -484,6 +497,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       if (_existingPropertyData['contractUrl'] != null) {
         try { await storage.refFromURL(_existingPropertyData['contractUrl']).delete(); } catch (_) {}
       }
+      
+      // 删除所有相关的图片
+      // 注意：这里删除的是加载时的原始列表，而不是当前 UI 上的列表，以防误删
       if (_existingPropertyData['imageUrls'] != null) {
         for (final url in List<String>.from(_existingPropertyData['imageUrls'])) {
           try { await storage.refFromURL(url).delete(); } catch (_) {}
@@ -558,43 +574,109 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     );
   }
 
+  // ✅ UI 修改：带删除功能的图片列表
   Widget _buildImageSection() {
-    final List<String> existingUrls = List<String>.from(_existingPropertyData['imageUrls'] ?? []);
-    bool showExisting = _selectedImages.isEmpty && existingUrls.isNotEmpty;
-    
-    return GestureDetector(
-      onTap: _pickImages,
-      child: Container(
-        height: 150,
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(15),
-          border: Border.all(color: Colors.white.withOpacity(0.2)),
-        ),
-        child: (!showExisting && _selectedImages.isEmpty)
-          ? Center(
-              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                const Icon(Icons.add_photo_alternate_outlined, color: Colors.white70, size: 40),
-                const SizedBox(height: 8),
-                Text(_isEditMode ? 'Tap to change pictures' : 'Add Pictures', style: const TextStyle(color: Colors.white70)),
-              ]))
+    // 图片总数 = 现有的(未删除的) + 新选的
+    final totalImages = _existingImageUrls.length + _selectedImages.length;
+    final bool isEmpty = totalImages == 0;
+
+    return Container(
+      height: 150,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: Colors.white.withOpacity(0.2)),
+      ),
+      child: isEmpty
+          ? GestureDetector(
+              onTap: _pickImages,
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.add_photo_alternate_outlined, color: Colors.white70, size: 40),
+                    const SizedBox(height: 8),
+                    Text(_isEditMode ? 'Tap to change pictures' : 'Add Pictures', style: const TextStyle(color: Colors.white70)),
+                  ],
+                ),
+              ),
+            )
           : ListView.builder(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.all(8),
-              itemCount: showExisting ? existingUrls.length : _selectedImages.length,
+              // 多加一个 item 用来放置“继续添加”按钮
+              itemCount: totalImages + 1,
               itemBuilder: (context, index) {
+                // 最后一个 Item 是“添加更多”按钮
+                if (index == totalImages) {
+                  return GestureDetector(
+                    onTap: _pickImages,
+                    child: Container(
+                      width: 100,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white30),
+                      ),
+                      child: const Center(child: Icon(Icons.add, color: Colors.white70, size: 30)),
+                    ),
+                  );
+                }
+
+                // 判断当前 index 是“旧图片”还是“新图片”
+                bool isExisting = index < _existingImageUrls.length;
+                int newImageIndex = index - _existingImageUrls.length;
+
                 return Padding(
                   padding: const EdgeInsets.only(right: 8.0),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: showExisting
-                      ? Image.network(existingUrls[index], fit: BoxFit.cover, width: 134, height: 134)
-                      : Image.file(File(_selectedImages[index].path), fit: BoxFit.cover, width: 134, height: 134),
+                  child: Stack(
+                    children: [
+                      // 图片
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: isExisting
+                          ? Image.network(
+                              _existingImageUrls[index],
+                              fit: BoxFit.cover, width: 134, height: 134,
+                            )
+                          : Image.file(
+                              File(_selectedImages[newImageIndex].path),
+                              fit: BoxFit.cover, width: 134, height: 134,
+                            ),
+                      ),
+                      
+                      // 删除按钮 (右上角)
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              if (isExisting) {
+                                // 移除现有网络图片
+                                _existingImageUrls.removeAt(index);
+                              } else {
+                                // 移除新选的本地图片
+                                _selectedImages.removeAt(newImageIndex);
+                              }
+                            });
+                          },
+                          child: Container(
+                            decoration: const BoxDecoration(
+                              color: Colors.redAccent,
+                              shape: BoxShape.circle,
+                            ),
+                            padding: const EdgeInsets.all(4),
+                            child: const Icon(Icons.close, color: Colors.white, size: 16),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 );
               },
             ),
-      ),
     );
   }
 
@@ -626,7 +708,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _buildImageSection(),
+                    _buildImageSection(), // 使用新的带删除功能的图片组件
                     const SizedBox(height: 16),
 
                     PanoramaUploadCard(

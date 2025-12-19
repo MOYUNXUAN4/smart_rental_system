@@ -2,7 +2,6 @@ import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-
 // 请确保这些路径与你项目实际路径一致
 import 'package:smart_rental_system/Compoents/property_card.dart';
 import 'package:smart_rental_system/Screens/compare_screen.dart';
@@ -28,9 +27,11 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
   @override
   void initState() {
     super.initState();
+    // ✅ 核心修改：如果是主列表模式，只查询状态为 "available" 的房源
     if (widget.preFilteredData == null) {
       _propertiesStream = FirebaseFirestore.instance
           .collection('properties')
+          .where('status', isEqualTo: 'available') // 🔥 过滤掉已出租的房源
           .orderBy('createdAt', descending: true)
           .snapshots();
     }
@@ -243,7 +244,6 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
         final String docId = data['id'];
         final bool isSelected = _selectedIds.contains(docId);
 
-        // ✅ 修正点1：移除了外层的 GestureDetector
         return AnimatedScale(
           scale: isSelected && _isSelectionMode ? 0.96 : 1.0,
           duration: const Duration(milliseconds: 200),
@@ -267,7 +267,6 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
             ),
             child: Stack(
               children: [
-                // ✅ 修正点2：移除了 IgnorePointer，直接使用 PropertyCard
                 PropertyCard(
                   propertyData: data,
                   propertyId: docId,
@@ -276,10 +275,10 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
                       : 'list_mode',
                   margin: EdgeInsets.zero,
                   
-                  // ✅ 修正点3：将点击逻辑传入 Card 内部处理
+                  // 处理点击
                   onTap: () => _handleItemTap(docId),
                   
-                  // ✅ 修正点4：选择模式下隐藏收藏按钮，避免重叠
+                  // 选择模式下隐藏收藏按钮
                   showFavoriteButton: !_isSelectionMode,
                 ),
 
@@ -288,7 +287,6 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
                   Positioned(
                     top: 10,
                     right: 10,
-                    // 使用 IgnorePointer 确保即便点到这个图标，也会穿透到底下 Card 的 onTap
                     child: IgnorePointer(
                       ignoring: true, 
                       child: AnimatedContainer(

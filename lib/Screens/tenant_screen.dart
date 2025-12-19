@@ -22,10 +22,12 @@ class TenantScreen extends StatefulWidget {
 }
 
 class _TenantScreenState extends State<TenantScreen> {
+  // 🔥 获取当前用户，如果是游客则为 null
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
+  
   late Stream<DocumentSnapshot> _userStream;
   late Stream<QuerySnapshot> _notificationStream; 
-  late Stream<QuerySnapshot> _activeLeaseStream; // ✅ 新增：监听活跃租约
+  late Stream<QuerySnapshot> _activeLeaseStream; // ✅ 监听活跃租约
 
   int _currentNavIndex = 3; 
   bool _isPaying = false; // 控制支付加载状态
@@ -33,10 +35,12 @@ class _TenantScreenState extends State<TenantScreen> {
   @override
   void initState() {
     super.initState();
+    
+    // ✅ 安全检查：如果用户已登录，初始化 Stream；否则给空 Stream
     if (_uid != null) {
       _userStream = FirebaseFirestore.instance.collection('users').doc(_uid).snapshots();
       
-      // 通知流
+      // 通知流 (监听未读消息)
       _notificationStream = FirebaseFirestore.instance
           .collection('bookings')
           .where('tenantUid', isEqualTo: _uid)
@@ -52,28 +56,60 @@ class _TenantScreenState extends State<TenantScreen> {
           .snapshots();
 
     } else {
+      // 游客模式：给空流，防止报错
       _userStream = const Stream.empty();
       _notificationStream = const Stream.empty();
       _activeLeaseStream = const Stream.empty();
     }
   }
 
+  // 🔥 检查登录状态并跳转
+  void _requireLogin(VoidCallback onSuccess) {
+    if (_uid == null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please login to access this feature.")),
+      );
+    } else {
+      onSuccess();
+    }
+  }
+
   // 导航逻辑
   void _onNavTap(int index) {
+    // 游客只能看 Home(0) 和 List(1)
+    // 2 (Favorites) 和 3 (Account) 需要登录，但Account页本身是当前页，所以特殊处理
+    
     if (index == 0) { 
       Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomeScreen(userRole: 'Tenant', initialIndex: 0)));
     } else if (index == 1) { 
       Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomeScreen(userRole: 'Tenant', initialIndex: 1)));
     } else if (index == 2) { 
-      Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomeScreen(userRole: 'Tenant', initialIndex: 2)));
+      // Favorites 需要登录
+      _requireLogin(() {
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomeScreen(userRole: 'Tenant', initialIndex: 2)));
+      });
     } else if (index == 3) { 
-      // Current
+      // Current Page (Dashboard)
     }
+    
     if (mounted) setState(() => _currentNavIndex = index);
   }
 
   // 🔥 退出登录逻辑
   Future<void> _signOut(BuildContext context) async {
+    // 如果是游客，点击 Log Out 直接去登录页
+    if (_uid == null) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+        (route) => false,
+      );
+      return;
+    }
+
     final bool? didConfirm = await showDialog<bool>(
       context: context,
       barrierColor: Colors.black.withOpacity(0.7),
@@ -162,7 +198,9 @@ class _TenantScreenState extends State<TenantScreen> {
   }
 
   void _navigateToBookings() {
-    Navigator.push(context, MaterialPageRoute(builder: (context) => const TenantBookingsScreen()));
+    _requireLogin(() {
+      Navigator.push(context, MaterialPageRoute(builder: (context) => const TenantBookingsScreen()));
+    });
   }
 
   // 🔥🔥🔥 新增：Dashboard 快速支付逻辑 🔥🔥🔥
@@ -190,6 +228,7 @@ class _TenantScreenState extends State<TenantScreen> {
 
       if (success) {
         // ✅ 支付成功：更新状态并通知房东
+        // 注意：这里我们使用了 batch 更新来确保一致性，但在 dashboard 简单更新也行
         await FirebaseFirestore.instance.collection('bookings').doc(docId).update({
           'paymentStatus': 'paid',     
           'paymentDate': FieldValue.serverTimestamp(),
@@ -251,7 +290,7 @@ class _TenantScreenState extends State<TenantScreen> {
             },
           ),
           IconButton(
-            icon: const Icon(Icons.logout, color: Colors.white),
+            icon: Icon(_uid == null ? Icons.login : Icons.logout, color: Colors.white),
             onPressed: () => _signOut(context),
           )
         ],
@@ -277,95 +316,107 @@ class _TenantScreenState extends State<TenantScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // 1. User Info Card
-                  StreamBuilder<DocumentSnapshot>(
-                    stream: _userStream,
-                    builder: (context, userSnapshot) {
-                      if (userSnapshot.hasError) return const SizedBox.shrink();
-                      if (userSnapshot.connectionState == ConnectionState.waiting) {
-                        return const UserInfoCard(name: 'Loading...', phone: '...', avatarUrl: null, pendingBookingCount: 0);
-                      }
-                      
-                      final userData = userSnapshot.data?.data() as Map<String, dynamic>? ?? {};
-                      final String name = userData['name'] ?? 'Tenant';
-                      final String phone = userData['phone'] ?? 'No Phone';
-                      final String? avatarUrl = userData['avatarUrl'];
-
-                      return StreamBuilder<QuerySnapshot>(
-                        stream: _notificationStream,
-                        builder: (context, notifSnapshot) {
-                          if (notifSnapshot.hasError) return UserInfoCard(name: name, phone: phone, avatarUrl: avatarUrl, pendingBookingCount: 0, onNotificationTap: _navigateToBookings);
-
-                          final int pendingCount = (notifSnapshot.hasData) ? notifSnapshot.data!.docs.length : 0;
-                          return UserInfoCard(
-                            name: name,
-                            phone: phone,
-                            avatarUrl: avatarUrl,
-                            pendingBookingCount: pendingCount, 
-                            onNotificationTap: _navigateToBookings, 
-                          );
-                        },
-                      );
-                    },
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // 🔥🔥 2. Current Active Lease (新功能) 🔥🔥
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: StreamBuilder<QuerySnapshot>(
-                      stream: _activeLeaseStream,
-                      builder: (context, snapshot) {
-                        if (snapshot.hasError || !snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                          return const SizedBox.shrink(); // 没有活跃租约时不显示
+                  if (_uid == null)
+                    // 游客模式卡片
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 20),
+                      child: UserInfoCard(
+                        name: 'Guest',
+                        phone: 'Sign in to access features',
+                        avatarUrl: null,
+                        pendingBookingCount: 0,
+                      ),
+                    )
+                  else
+                    StreamBuilder<DocumentSnapshot>(
+                      stream: _userStream,
+                      builder: (context, userSnapshot) {
+                        if (userSnapshot.hasError) return const SizedBox.shrink();
+                        if (userSnapshot.connectionState == ConnectionState.waiting) {
+                          return const UserInfoCard(name: 'Loading...', phone: '...', avatarUrl: null, pendingBookingCount: 0);
                         }
-
-                        final doc = snapshot.data!.docs.first;
-                        final data = doc.data() as Map<String, dynamic>;
-                        final String docId = doc.id;
-
-                        // 计算数据
-                        final Timestamp? start = data['leaseStartDate'];
-                        final Timestamp? end = data['leaseEndDate'];
-                        final int payDay = int.tryParse(data['monthlyPaymentDay']?.toString() ?? '1') ?? 1;
-                        final String nextPayDate = _getNextPaymentDate(payDay);
                         
-                        // 获取房产名 (异步获取有点麻烦，为了UI流畅，这里简化显示或需要FutureBuilder)
-                        // 这里我们用一个 FutureBuilder 简单获取房产名
-                        return FutureBuilder<DocumentSnapshot>(
-                          future: FirebaseFirestore.instance.collection('properties').doc(data['propertyId']).get(),
-                          builder: (context, propSnap) {
-                            String propertyName = "My Rental Home";
-                            if (propSnap.hasData && propSnap.data!.exists) {
-                              propertyName = propSnap.data!.get('communityName') ?? "My Rental Home";
-                            }
+                        final userData = userSnapshot.data?.data() as Map<String, dynamic>? ?? {};
+                        final String name = userData['name'] ?? 'Tenant';
+                        final String phone = userData['phone'] ?? 'No Phone';
+                        final String? avatarUrl = userData['avatarUrl'];
 
-                            String leaseRange = "Unknown";
-                            if (start != null && end != null) {
-                              leaseRange = "${DateFormat('MMM yyyy').format(start.toDate())} - ${DateFormat('MMM yyyy').format(end.toDate())}";
-                            }
+                        return StreamBuilder<QuerySnapshot>(
+                          stream: _notificationStream,
+                          builder: (context, notifSnapshot) {
+                            if (notifSnapshot.hasError) return UserInfoCard(name: name, phone: phone, avatarUrl: avatarUrl, pendingBookingCount: 0, onNotificationTap: _navigateToBookings);
 
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text("Current Lease", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
-                                const SizedBox(height: 12),
-                                _ActiveLeaseCard(
-                                  propertyName: propertyName,
-                                  leaseRange: leaseRange,
-                                  nextPayDate: nextPayDate,
-                                  rentAmount: data['price']?.toString() ?? '0',
-                                  isPaying: _isPaying,
-                                  onPayTap: () => _handleDashboardPayment(data, docId),
-                                ),
-                                const SizedBox(height: 24),
-                              ],
+                            final int pendingCount = (notifSnapshot.hasData) ? notifSnapshot.data!.docs.length : 0;
+                            return UserInfoCard(
+                              name: name,
+                              phone: phone,
+                              avatarUrl: avatarUrl,
+                              pendingBookingCount: pendingCount, 
+                              onNotificationTap: _navigateToBookings, 
                             );
-                          }
+                          },
                         );
                       },
                     ),
-                  ),
+
+                  const SizedBox(height: 20),
+
+                  // 🔥🔥 2. Current Active Lease (登录用户专享) 🔥🔥
+                  if (_uid != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: StreamBuilder<QuerySnapshot>(
+                        stream: _activeLeaseStream,
+                        builder: (context, snapshot) {
+                          if (snapshot.hasError || !snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                            return const SizedBox.shrink(); // 没有活跃租约时不显示
+                          }
+
+                          final doc = snapshot.data!.docs.first;
+                          final data = doc.data() as Map<String, dynamic>;
+                          final String docId = doc.id;
+
+                          // 计算数据
+                          final Timestamp? start = data['leaseStartDate'];
+                          final Timestamp? end = data['leaseEndDate'];
+                          final int payDay = int.tryParse(data['monthlyPaymentDay']?.toString() ?? '1') ?? 1;
+                          final String nextPayDate = _getNextPaymentDate(payDay);
+                          
+                          // 获取房产名
+                          return FutureBuilder<DocumentSnapshot>(
+                            future: FirebaseFirestore.instance.collection('properties').doc(data['propertyId']).get(),
+                            builder: (context, propSnap) {
+                              String propertyName = "My Rental Home";
+                              if (propSnap.hasData && propSnap.data!.exists) {
+                                propertyName = propSnap.data!.get('communityName') ?? "My Rental Home";
+                              }
+
+                              String leaseRange = "Unknown";
+                              if (start != null && end != null) {
+                                leaseRange = "${DateFormat('MMM yyyy').format(start.toDate())} - ${DateFormat('MMM yyyy').format(end.toDate())}";
+                              }
+
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text("Current Lease", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
+                                  const SizedBox(height: 12),
+                                  _ActiveLeaseCard(
+                                    propertyName: propertyName,
+                                    leaseRange: leaseRange,
+                                    nextPayDate: nextPayDate,
+                                    rentAmount: data['price']?.toString() ?? '0',
+                                    isPaying: _isPaying,
+                                    onPayTap: () => _handleDashboardPayment(data, docId),
+                                  ),
+                                  const SizedBox(height: 24),
+                                ],
+                              );
+                            }
+                          );
+                        },
+                      ),
+                    ),
 
                   // 3. Dashboard Menu
                   Padding(
