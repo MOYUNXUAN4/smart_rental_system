@@ -8,6 +8,8 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
 // ✅ 1. 引入全景图查看包
 import 'package:panorama_viewer/panorama_viewer.dart';
+// ✅ 2. 引入 main.dart 以使用 ConnectivityHelper (断网拦截)
+import 'package:smart_rental_system/main.dart';
 import 'package:smart_rental_system/screens/add_property_screen.dart';
 
 import '../Compoents/favorite_button.dart';
@@ -106,6 +108,10 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
         'meetingPoint': communityName, 
         'status': 'pending', 
         'requestedAt': FieldValue.serverTimestamp(),
+        
+        // 🔥🔥🔥 核心修改：触发房东通知 🔥🔥🔥
+        'isReadByLandlord': false, // 设为 false，房东的小铃铛就会出现红点
+        'isReadByTenant': true,    // 租客自己发的，默认已读
       });
     } catch (e) {
       throw Exception('Failed to send request: $e');
@@ -351,7 +357,11 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                         elevation: 5,
                         shadowColor: const Color(0xFF1D5DC7).withOpacity(0.4),
                       ),
+                      // ✅ 修改：加入断网拦截逻辑
                       onPressed: isSubmitting ? null : () async {
+                        // 1. 🔍 先检查网络 (断网则弹窗并拦截)
+                        if (!await ConnectivityHelper.ensureConnection()) return;
+
                         if (selectedDate == null || selectedTime == null) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('Please select a date and time.'), backgroundColor: Colors.redAccent),

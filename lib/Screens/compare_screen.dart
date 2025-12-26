@@ -189,7 +189,33 @@ class _CompareScreenState extends State<CompareScreen> {
                     width: double.infinity,
                     color: Colors.white10,
                     child: image.isNotEmpty
-                        ? Image.network(image, fit: BoxFit.cover)
+                        // ✅ 修改点：添加 errorBuilder 处理断网或加载失败的情况
+                        ? Image.network(
+                            image, 
+                            fit: BoxFit.cover,
+                            // 当图片加载出错（断网、URL无效）时，显示此 Widget，防止报错
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                color: Colors.white10,
+                                alignment: Alignment.center,
+                                child: const Icon(Icons.wifi_off_rounded, color: Colors.white30, size: 30),
+                              );
+                            },
+                            // 可选：添加 loadingBuilder 显示加载中转圈
+                            loadingBuilder: (context, child, loadingProgress) {
+                              if (loadingProgress == null) return child;
+                              return Center(
+                                child: CircularProgressIndicator(
+                                  value: loadingProgress.expectedTotalBytes != null
+                                      ? loadingProgress.cumulativeBytesLoaded /
+                                          loadingProgress.expectedTotalBytes!
+                                      : null,
+                                  color: Colors.white30,
+                                  strokeWidth: 2,
+                                ),
+                              );
+                            },
+                          )
                         : const Icon(Icons.image, color: Colors.white54),
                   ),
                 ),
@@ -225,8 +251,7 @@ class _CompareScreenState extends State<CompareScreen> {
               spacing: 6,
               runSpacing: 6,
               children: features.map((f) {
-                // ✅ 独有 Feature 判断逻辑：
-                // 如果该 Feature 出现的次数 < 房源总数，说明并不是每家都有，那么拥有的这家就是“独特优势”
+                // 独有 Feature 判断逻辑
                 bool isUnique = (featureCounts[f.trim()] ?? 0) < widget.properties.length;
                 
                 return Container(
