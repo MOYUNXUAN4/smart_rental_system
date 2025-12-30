@@ -14,17 +14,16 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 class ConnectivityHelper {
   static bool _isDialogShowing = false;
 
-  /// 核心检查逻辑：主动检查当前网络状态
+  /// check and ensure connectivity
   static Future<bool> ensureConnection() async {
     final results = await Connectivity().checkConnectivity();
-    // 适配 List<ConnectivityResult> 语法
     if (results.contains(ConnectivityResult.none)) {
       final context = navigatorKey.currentContext;
-      // 只有在 Context 准备好且当前没有正在显示的弹窗时才执行，防止无限循环
+      // avoid multiple dialogs
       if (context != null && !_isDialogShowing) {
         _isDialogShowing = true;
         
-        // 弹出你精美的毛玻璃弹窗
+
         await showGlassConfirmDialog(
           context: context,
           title: "Connection Required",
@@ -36,18 +35,18 @@ class ConnectivityHelper {
         
         _isDialogShowing = false;
       }
-      return false; // 代表断网
+      return false; // connectivity issue
     }
-    return true; // 代表网络正常
+    return true; // connected great
   }
 }
 
-// ✅ 路由观察者：实现“切换屏幕即提示”的关键
+// ✅ change screen observer to check connectivity
 class ConnectivityNavigationObserver extends NavigatorObserver {
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     super.didPush(route, previousRoute);
-    // 🔥 重要：如果 push 的是一个对话框(PopupRoute)，不要再次检查，否则会死循环
+    // is push is a popup, skip
     if (route is! PopupRoute) {
       ConnectivityHelper.ensureConnection();
     }

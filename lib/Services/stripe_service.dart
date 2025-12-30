@@ -1,7 +1,6 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
-// ✅ 导入 main.dart 以便使用 ConnectivityHelper
 import 'package:smart_rental_system/main.dart'; 
 
 class StripeService {
@@ -9,19 +8,18 @@ class StripeService {
   factory StripeService() => instance;
   StripeService._internal();
 
-  /// 发起 Stripe 支付
+  //start payment process
   Future<bool> makePayment(
     double amountVal, {
     String currency = 'myr',
   }) async {
-    // ✅ 新增：在发起支付流程前，先检查网络
-    // 如果断网，直接弹出对话框并返回 false，不再执行后续昂贵的 Cloud Function 调用
+    //check connectivity first 
     if (!await ConnectivityHelper.ensureConnection()) {
       return false; 
     }
 
     try {
-      // 1️⃣ 金额转换（防浮点误差）
+      // transform amount to cents
       final int amountInCents = (amountVal * 100).round();
       debugPrint("Stripe: start payment $amountInCents $currency");
 
@@ -29,20 +27,20 @@ class StripeService {
         throw Exception("Invalid payment amount");
       }
 
-      // 2️⃣ 调用 Firebase Cloud Function 创建 PaymentIntent
+      // 2️⃣ use firebase functions to create payment intent
       final HttpsCallable callable =
           FirebaseFunctions.instance.httpsCallable(
         'createPaymentIntent',
         options: HttpsCallableOptions(timeout: const Duration(seconds: 30)),
       );
 
-      // 如果在这里断网，原本会触发那个讨厌的 console error
+      // if error occurs here, it will be caught by catch block
       final result = await callable.call({
         'amount': amountInCents,
         'currency': currency,
       });
 
-      // 3️⃣ 校验返回数据
+      // 3️⃣ check response and get client secret
       final data = result.data;
       if (data == null || data['clientSecret'] == null) {
         throw Exception('Invalid PaymentIntent response');
@@ -51,7 +49,7 @@ class StripeService {
       final String clientSecret = data['clientSecret'];
       debugPrint("Stripe: clientSecret received");
 
-      // 4️⃣ 初始化 PaymentSheet
+      // 4️⃣ start payment sheet
       await Stripe.instance.initPaymentSheet(
         paymentSheetParameters: SetupPaymentSheetParameters(
           paymentIntentClientSecret: clientSecret,
@@ -60,7 +58,7 @@ class StripeService {
         ),
       );
 
-      // 5️⃣ 弹出支付窗口
+      // 5️⃣ present payment sheet to user
       await Stripe.instance.presentPaymentSheet();
 
       debugPrint("Stripe: payment success");
@@ -75,7 +73,6 @@ class StripeService {
       return false;
 
     } catch (e, stack) {
-      // ✅ 这里静默处理，不再向上 throw，因为用户已经在界面上通过弹窗知道是网络或系统问题了
       debugPrint("Stripe system error: $e");
       return false;
     }

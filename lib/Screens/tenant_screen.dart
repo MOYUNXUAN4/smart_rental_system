@@ -52,27 +52,60 @@ class _TenantScreenState extends State<TenantScreen> {
     }
   }
 
-  // 🔥 辅助函数：计算下一次还款日期 (用于排序)
+  // 🔥 修复后的日期计算逻辑：支持提前还款识别
   DateTime _calculateNextDueDate(Map<String, dynamic> data) {
     final int payDay = int.tryParse(data['monthlyPaymentDay']?.toString() ?? '1') ?? 1;
     final Timestamp? lastPayment = data['lastPaymentDate'];
     
     DateTime now = DateTime.now();
-    bool hasPaidThisMonth = false;
 
     if (lastPayment != null) {
-      DateTime lastDate = lastPayment.toDate();
-      if (lastDate.year == now.year && lastDate.month == now.month) {
-        hasPaidThisMonth = true;
+      DateTime payTime = lastPayment.toDate();
+      
+      // 🧠 智能判定：如果是月底 (20号后) 付 月初 (15号前) 的房租 -> 视为付了下个月的钱
+      // 比如：12月26日 付了 1月1日 的房租
+      bool isEarlyPaymentForNextMonth = (payDay < 15) && (payTime.day > 20);
+
+      if (isEarlyPaymentForNextMonth) {
+        // 如果是12月付的，payTime.month 是12。
+        // 既然是 Early Payment，说明这笔钱cover了1月。
+        // 那么 Next Due 就是 2月。
+        
+        // 逻辑：基于支付时间，跳过它cover的那个月，再往后推一个月
+        DateTime paidForMonth;
+        if (payTime.month == 12) {
+          paidForMonth = DateTime(payTime.year + 1, 1, 1);
+        } else {
+          paidForMonth = DateTime(payTime.year, payTime.month + 1, 1);
+        }
+
+        // 下一次截止日 = PaidForMonth + 1 month
+        if (paidForMonth.month == 12) {
+          return DateTime(paidForMonth.year + 1, 1, payDay);
+        } else {
+          return DateTime(paidForMonth.year, paidForMonth.month + 1, payDay);
+        }
+      } else {
+        // 普通情况：同月支付 (比如5号付了本月1号的钱)
+        // 既然lastPaymentDate存在且不是Early Payment，说明本月已付。
+        // Next Due = 本月 + 1
+        // 注意：这里要处理 "如果上个月付了，但现在已经是新的一月且没付" 的情况
+        
+        // 简单化：如果最后一次支付月份 == 当前月份，说明本月已付 -> 下个月
+        // 如果最后一次支付月份 < 当前月份，说明本月未付 -> 本月
+        
+        if (payTime.year == now.year && payTime.month == now.month) {
+           // 本月已付 -> 下个月
+           return DateTime(now.year, now.month + 1, payDay);
+        } else if (payTime.isBefore(DateTime(now.year, now.month, 1))) {
+           // 上次支付是很久以前 -> 本月
+           return DateTime(now.year, now.month, payDay);
+        }
       }
     }
 
-    // 如果这个月付过了，下个截止日就是下个月；否则就是这个月
-    if (hasPaidThisMonth) {
-      return DateTime(now.year, now.month + 1, payDay);
-    } else {
-      return DateTime(now.year, now.month, payDay);
-    }
+    // 没付过钱 -> 本月
+    return DateTime(now.year, now.month, payDay);
   }
 
   void _requireLogin(VoidCallback onSuccess) {
@@ -223,7 +256,7 @@ class _TenantScreenState extends State<TenantScreen> {
                       builder: (context, snapshot) {
                         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return const SizedBox.shrink();
                         
-                        // 🔥 1. 获取并排序数据
+                        // 🔥 1. 获取并排序数据 (使用新逻辑)
                         var docs = snapshot.data!.docs;
                         docs.sort((a, b) {
                           DateTime dateA = _calculateNextDueDate(a.data() as Map<String, dynamic>);
@@ -247,7 +280,7 @@ class _TenantScreenState extends State<TenantScreen> {
                               itemBuilder: (context, index) {
                                 // 🔥 2. 将 Key 和 startExpanded 传给子组件
                                 return _ExpandableLeaseCard(
-                                  key: ValueKey(docs[index].id), // 确保列表排序变化时 UI 不会错乱
+                                  key: ValueKey(docs[index].id), 
                                   doc: docs[index],
                                   isPaying: _payingBookingIds.contains(docs[index].id),
                                   startExpanded: index == 0, // ✨ 只有第一个默认展开
@@ -329,14 +362,14 @@ class _TenantScreenState extends State<TenantScreen> {
 class _ExpandableLeaseCard extends StatefulWidget {
   final DocumentSnapshot doc;
   final bool isPaying;
-  final bool startExpanded; // ✨ 新增参数
+  final bool startExpanded; 
   final VoidCallback onPayTap;
 
   const _ExpandableLeaseCard({
-    super.key, // 建议加上 Key
+    super.key, 
     required this.doc, 
     required this.isPaying, 
-    this.startExpanded = false, // 默认为 false
+    this.startExpanded = false, 
     required this.onPayTap
   });
 
@@ -350,14 +383,12 @@ class _ExpandableLeaseCardState extends State<_ExpandableLeaseCard> {
   @override
   void initState() {
     super.initState();
-    // 🔥 初始化时，应用传入的默认状态
     _isExpanded = widget.startExpanded;
   }
 
   @override
   void didUpdateWidget(_ExpandableLeaseCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 如果组件被重建（比如列表重新排序导致 doc 改变），我们需要更新状态
     if (widget.doc.id != oldWidget.doc.id) {
        _isExpanded = widget.startExpanded;
     }
@@ -371,21 +402,59 @@ class _ExpandableLeaseCardState extends State<_ExpandableLeaseCard> {
     final String rentAmount = data['price']?.toString() ?? '0';
 
     DateTime now = DateTime.now();
-    bool hasPaidThisMonth = false;
+
+    // 🔥🔥🔥 核心修正：智能推算 Next Due Date 🔥🔥🔥
+    DateTime nextDueDate;
+    bool hasPaidForCurrentCycle = false;
+    
+    // 默认为本月
+    nextDueDate = DateTime(now.year, now.month, payDay);
+
     if (lastPayment != null) {
-      DateTime lastDate = lastPayment.toDate();
-      if (lastDate.year == now.year && lastDate.month == now.month) hasPaidThisMonth = true;
+      DateTime payTime = lastPayment.toDate();
+      
+      // 算法：如果是 月底(>20) 付 月初(<15) 的租金 -> 认为是提前支付了下个月的
+      bool isEarlyPayment = (payDay < 15) && (payTime.day > 20);
+
+      if (isEarlyPayment) {
+        // 判定：已付下月
+        // 下次截止日应该是：下下个月
+        // 例子：12月26 付 1月1日。 PaidFor=Jan. NextDue=Feb.
+        
+        DateTime paidForMonth; // 1月
+        if (payTime.month == 12) {
+          paidForMonth = DateTime(payTime.year + 1, 1, 1);
+        } else {
+          paidForMonth = DateTime(payTime.year, payTime.month + 1, 1);
+        }
+        
+        // Next Due = PaidFor + 1
+        if (paidForMonth.month == 12) {
+          nextDueDate = DateTime(paidForMonth.year + 1, 1, payDay);
+        } else {
+          nextDueDate = DateTime(paidForMonth.year, paidForMonth.month + 1, payDay);
+        }
+        hasPaidForCurrentCycle = true;
+
+      } else {
+        // 普通情况：同月支付
+        if (payTime.year == now.year && payTime.month == now.month) {
+          // 本月已付 -> 下个月
+          hasPaidForCurrentCycle = true;
+          if (now.month == 12) {
+            nextDueDate = DateTime(now.year + 1, 1, payDay);
+          } else {
+            nextDueDate = DateTime(now.year, now.month + 1, payDay);
+          }
+        } else {
+          // 上次支付是很久以前 -> 本月
+          // nextDueDate 保持默认值 (本月)
+        }
+      }
     }
 
-    DateTime targetDate;
-    if (hasPaidThisMonth) {
-      targetDate = DateTime(now.year, now.month + 1, payDay); // 下个月
-    } else {
-      targetDate = DateTime(now.year, now.month, payDay); // 这个月
-    }
-
-    int daysUntilDue = targetDate.difference(now).inDays;
-    bool isOverdue = !hasPaidThisMonth && (now.day > payDay);
+    int daysUntilDue = nextDueDate.difference(now).inDays;
+    bool isOverdue = !hasPaidForCurrentCycle && (now.day > payDay) && nextDueDate.month == now.month;
 
     final List<Color> bgGradient = isOverdue 
         ? [const Color(0xFFD32F2F), const Color(0xFFB71C1C)] 
@@ -413,8 +482,8 @@ class _ExpandableLeaseCardState extends State<_ExpandableLeaseCard> {
               boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))],
             ),
             child: _isExpanded 
-              ? _buildExpanded(propertyName, leaseRange, DateFormat('dd MMM yyyy').format(targetDate), rentAmount, accentColor, statusText, isOverdue)
-              : _buildCollapsed(propertyName, DateFormat('dd MMM yyyy').format(targetDate), statusText, accentColor),
+              ? _buildExpanded(propertyName, leaseRange, DateFormat('dd MMM yyyy').format(nextDueDate), rentAmount, accentColor, statusText, isOverdue)
+              : _buildCollapsed(propertyName, DateFormat('dd MMM yyyy').format(nextDueDate), statusText, accentColor),
           ),
         );
       }
@@ -442,6 +511,37 @@ class _ExpandableLeaseCardState extends State<_ExpandableLeaseCard> {
   }
 
   Widget _buildExpanded(String name, String range, String date, String amount, Color accent, String status, bool isOverdue) {
+    // 🔥🔥 新增：动态计算并显示已付月份 (Paid For ...) 🔥🔥
+    String paidForText = "";
+    bool showPaidInfo = false;
+    
+    final Map<String, dynamic> data = widget.doc.data() as Map<String, dynamic>;
+    final Timestamp? lastPayment = data['lastPaymentDate'];
+    final int monthlyPaymentDay = int.tryParse(data['monthlyPaymentDay']?.toString() ?? '1') ?? 1;
+
+    if (lastPayment != null) {
+      DateTime payTime = lastPayment.toDate();
+      DateTime targetMonth;
+      
+      // 智能判断：是付当月还是下月
+      bool isEarly = (monthlyPaymentDay < 15) && (payTime.day > 20);
+      
+      if (isEarly) {
+        // 如果是提前付，Paid For = 下个月
+        if (payTime.month == 12) {
+           targetMonth = DateTime(payTime.year + 1, 1, 1);
+        } else {
+           targetMonth = DateTime(payTime.year, payTime.month + 1, 1);
+        }
+      } else {
+        // 普通支付，Paid For = 当前支付月
+        targetMonth = payTime;
+      }
+
+      paidForText = "Paid for: ${DateFormat('MMMM yyyy').format(targetMonth)}";
+      showPaidInfo = true;
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -469,6 +569,31 @@ class _ExpandableLeaseCardState extends State<_ExpandableLeaseCard> {
             _infoItem("Next Due", date, accent: accent),
           ],
         ),
+        
+        // 🔥 显示已付月份的 UI
+        if (showPaidInfo) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.check_circle_outline, color: Color(0xFF69F0AE), size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  paidForText, 
+                  style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500)
+                ),
+              ],
+            ),
+          ),
+        ],
+
         const SizedBox(height: 20),
         SizedBox(
           width: double.infinity,

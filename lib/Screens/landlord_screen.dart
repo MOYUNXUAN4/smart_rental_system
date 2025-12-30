@@ -1,15 +1,14 @@
-import 'dart:ui'; // ✅ 必须引入，用于毛玻璃效果
+import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 // 导入组件
-// 请确保你的文件夹名是 Compoents 还是 Components，这里保持和你之前的一致
 import 'package:smart_rental_system/Compoents/animated_bottom_nav.dart';
 import 'package:smart_rental_system/Compoents/property_card.dart';
 import 'package:smart_rental_system/Compoents/user_info_card.dart';
-import 'package:smart_rental_system/Screens/home_screen.dart'; // 注意这里是用 Screens 还是 screens，根据你的实际文件夹调整
+import 'package:smart_rental_system/Screens/home_screen.dart';
 // 导入屏幕
 import 'package:smart_rental_system/Screens/login_screen.dart';
 import 'package:smart_rental_system/screens/add_property_screen.dart';
@@ -52,7 +51,6 @@ class _LandlordScreenState extends State<LandlordScreen> {
           .where('isReadByLandlord', isEqualTo: false) 
           .snapshots();
 
-      // ✅ 获取已出租订单 (Status == completed)
       _rentedStream = FirebaseFirestore.instance
           .collection('bookings')
           .where('landlordUid', isEqualTo: _uid)
@@ -68,7 +66,6 @@ class _LandlordScreenState extends State<LandlordScreen> {
   }
 
   void _onNavTap(int index) {
-    // ✅ 修复：去掉了 const，防止报错
     if (index == 0) {
       Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => HomeScreen(userRole: 'Landlord', initialIndex: 0)));
     } else if (index == 1) {
@@ -160,7 +157,6 @@ class _LandlordScreenState extends State<LandlordScreen> {
   }
 
   void _navigateToBookings() {
-    // ✅ 修复：去掉了 const，防止 Not a constant expression 报错
     Navigator.push(context, MaterialPageRoute(builder: (context) => LandlordBookingsScreen()));
   }
 
@@ -202,7 +198,6 @@ class _LandlordScreenState extends State<LandlordScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // 🔥 1. 背景 (保持一致的极光背景)
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -218,7 +213,6 @@ class _LandlordScreenState extends State<LandlordScreen> {
               crossAxisAlignment: CrossAxisAlignment.start, 
               children: [
                 
-                // 2. 用户卡片
                 StreamBuilder<DocumentSnapshot>(
                   stream: _userStream,
                   builder: (context, userSnapshot) {
@@ -240,7 +234,6 @@ class _LandlordScreenState extends State<LandlordScreen> {
                   },
                 ),
                 
-                // 🔥🔥🔥 3. 收租概览 (Glassmorphism Cards) 🔥🔥🔥
                 StreamBuilder<QuerySnapshot>(
                   stream: _rentedStream,
                   builder: (context, snapshot) {
@@ -252,7 +245,6 @@ class _LandlordScreenState extends State<LandlordScreen> {
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // 3.1 标题
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
                           child: InkWell(
@@ -275,11 +267,11 @@ class _LandlordScreenState extends State<LandlordScreen> {
                           ),
                         ),
 
-                        // 3.2 横向滚动的毛玻璃卡片
                         AnimatedCrossFade(
                           firstChild: const SizedBox(width: double.infinity),
                           secondChild: Container(
-                            constraints: const BoxConstraints(maxHeight: 200),
+                            // 🔥🔥🔥 修复点：增加高度到 250 🔥🔥🔥
+                            constraints: const BoxConstraints(maxHeight: 250),
                             child: ListView.builder(
                               scrollDirection: Axis.horizontal, 
                               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -301,7 +293,6 @@ class _LandlordScreenState extends State<LandlordScreen> {
                   }
                 ),
 
-                // 4. My Properties 标题
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
                   child: Row(
@@ -316,7 +307,6 @@ class _LandlordScreenState extends State<LandlordScreen> {
                   ),
                 ),
 
-                // 5. 房产列表 (带毛玻璃 RENTED 遮罩)
                 Expanded(
                   child: StreamBuilder<QuerySnapshot>(
                     stream: _propertiesStream,
@@ -350,27 +340,24 @@ class _LandlordScreenState extends State<LandlordScreen> {
                             padding: const EdgeInsets.only(bottom: 16.0),
                             child: Stack(
                               children: [
-                                // 底层卡片
                                 PropertyCard(
                                   propertyData: data,
                                   propertyId: doc.id,
                                   heroTagPrefix: 'landlord_list',
                                   onTap: () {
-                                    // ✅ 修复：去掉了 const
                                     Navigator.push(context, MaterialPageRoute(builder: (context) => AddPropertyScreen(propertyId: doc.id)));
                                   },
                                 ),
                                 
-                                // 🔥🔥 毛玻璃 RENTED 遮罩 🔥🔥
                                 if (isRented)
                                   Positioned.fill(
                                     child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(20), // 必须匹配 PropertyCard
+                                      borderRadius: BorderRadius.circular(20),
                                       child: BackdropFilter(
-                                        filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3), // 轻微模糊，让底下若隐若现
+                                        filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3), 
                                         child: Container(
                                           decoration: BoxDecoration(
-                                            color: Colors.black.withOpacity(0.2), // 稍微变暗
+                                            color: Colors.black.withOpacity(0.2), 
                                             border: Border.all(color: Colors.white.withOpacity(0.1)),
                                           ),
                                           alignment: Alignment.topRight,
@@ -432,7 +419,6 @@ class _LandlordScreenState extends State<LandlordScreen> {
         child: SizedBox(
           width: 56, height: 56,
           child: FloatingActionButton(
-            // ✅ 修复：去掉了 const
             onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AddPropertyScreen())),
             elevation: 0,
             backgroundColor: Colors.transparent, 
@@ -457,7 +443,7 @@ class _LandlordScreenState extends State<LandlordScreen> {
   }
 }
 
-// 🔥🔥🔥 核心组件：全毛玻璃收租卡片 (GlassRentCard) - 已修复金额显示 🔥🔥🔥
+// 🔥🔥🔥 核心组件：智能收租卡片 (Smart Rent Card) 🔥🔥🔥
 class _GlassRentCard extends StatelessWidget {
   final Map<String, dynamic> data;
   final VoidCallback onTap;
@@ -470,44 +456,79 @@ class _GlassRentCard extends StatelessWidget {
     final String propertyId = data['propertyId'];
     final String tenantUid = data['tenantUid'];
     
-    // ❌ 删除: final String rentAmount = data['rentAmount']?.toString() ?? '0'; 
-    // 改为下面用 FutureBuilder 动态获取
-
     final int monthlyPaymentDay = int.tryParse(data['monthlyPaymentDay']?.toString() ?? '1') ?? 1;
     final Timestamp? lastPaymentTimestamp = data['lastPaymentDate'] as Timestamp?;
 
-    // --- 支付状态逻辑 ---
+    // --- 🔥 智能状态逻辑 (Smart Billing Logic) 🔥 ---
     final now = DateTime.now();
-    final currentMonthDue = DateTime(now.year, now.month, monthlyPaymentDay);
     
-    // UI 变量
-    String statusText = "";
-    Color statusColor = Colors.white;
-    List<Color> gradientColors = [Colors.grey, Colors.grey]; 
+    // UI 变量初始化
+    String statusText = "UNKNOWN";
+    Color statusColor = Colors.grey;
+    List<Color> gradientColors = [Colors.grey, Colors.grey];
     IconData statusIcon = Icons.info_outline;
 
-    bool isPaidThisMonth = false;
-    DateTime? lastPayDate;
+    DateTime? payTime;
     if (lastPaymentTimestamp != null) {
-      lastPayDate = lastPaymentTimestamp.toDate();
-      isPaidThisMonth = lastPayDate.month == now.month && lastPayDate.year == now.year;
+      payTime = lastPaymentTimestamp.toDate();
     }
 
-    if (isPaidThisMonth) {
-      if (lastPayDate!.day < monthlyPaymentDay) {
-        // 🟢 提前支付
-        statusText = "PAID EARLY - ${DateFormat('dd MMM').format(lastPayDate)}";
-        gradientColors = [const Color(0xFF00E676).withOpacity(0.3), const Color(0xFF00E676).withOpacity(0.1)];
-        statusColor = const Color(0xFF69F0AE);
-        statusIcon = Icons.verified_rounded;
+    DateTime targetDueDate;
+    String paidForMonthText = "";
+
+    if (payTime != null) {
+      // 🧠 核心算法：智能推断目标月份
+      bool isEarlyPaymentForNextMonth = (monthlyPaymentDay < 15) && (payTime.day > 20);
+
+      if (isEarlyPaymentForNextMonth) {
+        if (payTime.month == 12) {
+           targetDueDate = DateTime(payTime.year + 1, 1, monthlyPaymentDay);
+        } else {
+           targetDueDate = DateTime(payTime.year, payTime.month + 1, monthlyPaymentDay);
+        }
       } else {
-        // 🟢 正常支付
-        statusText = "PAID - ${DateFormat('dd MMM').format(lastPayDate)}";
-        gradientColors = [const Color(0xFF66BB6A).withOpacity(0.3), const Color(0xFF66BB6A).withOpacity(0.1)];
-        statusColor = const Color(0xFFA5D6A7);
-        statusIcon = Icons.check_circle_rounded;
+        targetDueDate = DateTime(payTime.year, payTime.month, monthlyPaymentDay);
       }
+      
+      paidForMonthText = "Paid for: ${DateFormat('MMM yyyy').format(targetDueDate)}";
+
     } else {
+      // 没付钱，目标就是"本月"
+      targetDueDate = DateTime(now.year, now.month, monthlyPaymentDay);
+    }
+
+    // 比较逻辑
+    if (payTime != null) {
+      final datePaid = DateTime(payTime.year, payTime.month, payTime.day);
+      final dateDue = DateTime(targetDueDate.year, targetDueDate.month, targetDueDate.day);
+
+      if (datePaid.isBefore(dateDue)) {
+        // 🟢 提前 (Early)
+        statusText = "PAID EARLY - ${DateFormat('dd MMM').format(payTime)}";
+        gradientColors = [const Color(0xFF00E676).withOpacity(0.3), const Color(0xFF00E676).withOpacity(0.1)];
+        statusColor = const Color(0xFF69F0AE); 
+        statusIcon = Icons.verified_rounded;
+      
+      } else if (datePaid.isAtSameMomentAs(dateDue)) {
+        // 🟢 准时 (On Time)
+        statusText = "PAID ON TIME - ${DateFormat('dd MMM').format(payTime)}";
+        gradientColors = [const Color(0xFF66BB6A).withOpacity(0.3), const Color(0xFF66BB6A).withOpacity(0.1)];
+        statusColor = const Color(0xFFA5D6A7); 
+        statusIcon = Icons.check_circle_rounded;
+      
+      } else {
+        // 🟠 迟交 (Late)
+        final daysLate = datePaid.difference(dateDue).inDays;
+        statusText = "PAID LATE ($daysLate DAYS)";
+        gradientColors = [Colors.orangeAccent.withOpacity(0.3), Colors.orangeAccent.withOpacity(0.1)];
+        statusColor = Colors.orangeAccent;
+        statusIcon = Icons.history_toggle_off_rounded;
+      }
+
+    } else {
+      // ❌ 未支付状态
+      final currentMonthDue = DateTime(now.year, now.month, monthlyPaymentDay);
+      
       if (now.day > monthlyPaymentDay) {
         // 🔴 逾期
         final daysLate = now.difference(currentMonthDue).inDays;
@@ -548,7 +569,7 @@ class _GlassRentCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // 1. 顶部：房产名
+                      // 顶部：房产名
                       Row(
                         children: [
                           Container(
@@ -579,13 +600,13 @@ class _GlassRentCard extends StatelessWidget {
                         ],
                       ),
                       
-                      const SizedBox(height: 12),
+                      // 🔥 修改：稍微调小这里的间距 12 -> 8
+                      const SizedBox(height: 8),
 
-                      // 2. 中部：租金 & 租客
+                      // 中部：租金 & 租客
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          // 租客信息
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -604,20 +625,17 @@ class _GlassRentCard extends StatelessWidget {
                             ],
                           ),
                           
-                          // 🔥🔥🔥 修复部分：租金金额 (Fetching Price from Properties) 🔥🔥🔥
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Text("RENT", style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
                               const SizedBox(height: 4),
                               FutureBuilder<DocumentSnapshot>(
-                                // 这里去 properties 表里找数据
                                 future: FirebaseFirestore.instance.collection('properties').doc(propertyId).get(),
                                 builder: (context, snapshot) {
                                   String priceDisplay = "...";
                                   if (snapshot.hasData && snapshot.data != null && snapshot.data!.exists) {
                                     final pData = snapshot.data!.data() as Map<String, dynamic>;
-                                    // 尝试获取 price，如果没有则尝试 rentAmount，都没有则显示 0
                                     priceDisplay = pData['price']?.toString() ?? pData['rentAmount']?.toString() ?? '0';
                                   }
                                   return Text(
@@ -630,10 +648,24 @@ class _GlassRentCard extends StatelessWidget {
                           ),
                         ],
                       ),
+                      
+                      // 🔥 修改：稍微调小这里的间距 12 -> 8
+                      const SizedBox(height: 8),
+                      
+                      // 🔥 新增：显示已付月份 🔥
+                      if (paidForMonthText.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8.0),
+                          child: Row(
+                            children: [
+                              Icon(Icons.calendar_today, color: Colors.white.withOpacity(0.6), size: 12),
+                              const SizedBox(width: 4),
+                              Text(paidForMonthText, style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 11)),
+                            ],
+                          ),
+                        ),
 
-                      const SizedBox(height: 12),
-
-                      // 3. 底部：毛玻璃支付状态条
+                      // 底部：毛玻璃支付状态条
                       ClipRRect(
                         borderRadius: BorderRadius.circular(12),
                         child: BackdropFilter(

@@ -10,18 +10,19 @@ class ReceiptScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 1. 解析基础数据
+    // 1. Analyzing basic data
     final double amount = double.tryParse(bookingData['rentAmount']?.toString() ?? bookingData['price']?.toString() ?? '0') ?? 0.0;
     final Timestamp? payTime = bookingData['paymentDate'] ?? bookingData['lastPaymentDate'];
     final String propertyId = bookingData['propertyId'] ?? '';
 
-    // 2. 处理日期字符串
+    // 2. Processing date strings
     final String dateStr = payTime != null 
         ? DateFormat('yyyy-MM-dd HH:mm').format(payTime.toDate()) 
         : 'Unknown';
 
-    // 3. 🔥🔥🔥 计算是哪个月的房租 (Billing Period) 🔥🔥🔥
-    // 逻辑：通常支付时间所在的月份就是房租月份 (或者你可以根据 leaseStartDate 计算)
+    // 3. 🔥🔥🔥 Calculate the Billing Period 🔥🔥🔥
+
+  // Logic: Usually, the month in which the payment is due is the month of the rent payment (or you can calculate it based on leaseStartDate).
     final String billingPeriod = payTime != null 
         ? DateFormat('MMMM yyyy').format(payTime.toDate()) // 例如: December 2025
         : 'Unknown Period';

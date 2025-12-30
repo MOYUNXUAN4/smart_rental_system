@@ -1,11 +1,9 @@
 import 'dart:ui'; // 导入毛玻璃效果
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:smart_rental_system/services/account_check_screen.dart';
 
-// ✅ 导入 AccountCheckScreen 以修复导航
-import '../services/account_check_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:smart_rental_system/services/account_check_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   final String userType;
@@ -52,14 +50,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     try {
-      // 2. 创建 Auth 用户
       UserCredential userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
 
-      // 3. 存储 Firestore 信息
       User? user = userCredential.user;
       if (user != null) {
         await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
@@ -67,7 +63,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           'name': _nameController.text.trim(),
           'email': _emailController.text.trim(),
           'phone': _phoneController.text.trim(),
-          'userType': widget.userType, // 存储从 LoginScreen 传入的类型
+          'userType': widget.userType,
           'createdAt': Timestamp.now(),
         });
 
