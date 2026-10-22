@@ -3,11 +3,13 @@
 ### *基于 Flutter、Firebase 与 Stripe 的新一代全闭环智能房屋租赁系统*
 
 <p align="center">
-  <a href="#-english-documentation">English</a> •
-  <a href="#-中文文档">中文说明</a>
+  <a href="#-english-documentation">English Documentation</a> •
+  <a href="#-中文文档">中文说明文档</a> •
+  <a href="#-application-visual-walkthrough--实机运行预览">Live Screenshots</a>
 </p>
 
 <p align="center">
+  <a href="https://youtu.be/iYnOc6fSKF4"><img src="https://img.shields.io/badge/YouTube-Watch%20Live%20Demo-red?logo=youtube" alt="YouTube Demo" /></a>
   <img src="https://img.shields.io/badge/Flutter-3.4%2B-blue.svg?logo=flutter" alt="Flutter" />
   <img src="https://img.shields.io/badge/Dart-3.4%2B-0175C2.svg?logo=dart" alt="Dart" />
   <img src="https://img.shields.io/badge/Backend-Firebase%20(Auth%20%7C%20Firestore%20%7C%20Storage)-orange.svg?logo=firebase" alt="Firebase" />
@@ -17,6 +19,44 @@
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License" />
   <img src="https://img.shields.io/badge/Author-MOYUNXUAN-orange.svg" alt="Author" />
 </p>
+
+---
+
+## 🖼️ Application Visual Walkthrough / 实机运行预览
+
+> [!TIP]
+> 📺 **Live Video Demonstration**: You can watch the full dual-device interactive demonstration on YouTube: [https://youtu.be/iYnOc6fSKF4](https://youtu.be/iYnOc6fSKF4).  
+> All screenshots below are captured directly from real-time simultaneous interaction between **Tenant** (Pixel 8 Pro) and **Landlord** (Pixel 9 Pro).
+
+| 1. Property Upload & Specification / 房源上传 | 2. Bilingual Contract Generation / 双语合同拟定 |
+|:---:|:---:|
+| ![Property Upload](docs/images/screenshots/01_property_upload.png) | ![Contract Option](docs/images/screenshots/02_contract_option.png) |
+| *Landlord uploads photos, 360° VR panorama & price*<br>房东录入房源照片、360° 全景图、配套设施与租金 | *Option to upload custom contract or generate in EN/ZH*<br>支持上传已有合同或在线生成中英文合规租约 |
+
+| 3. Feed Discovery & Watchlist / 房源发现与收藏 | 4. Side-by-Side Comparison Matrix / 横向对比矩阵 |
+|:---:|:---:|
+| ![Favorites & Discovery](docs/images/screenshots/03_favorites_and_discovery.png) | ![Property Comparison](docs/images/screenshots/04_property_comparison.png) |
+| *Tenant property feed with 360° tags & favorite heart*<br>租客端房源推荐流、360° 漫游标识与高对比度红心收藏 | *Automated comparison highlighting best options*<br>多套房源月租、面积、朝向多维对照与优势绿标高亮 |
+
+| 5. Property Detail & Google Maps / 详情与地图 | 6. Viewing Appointment Scheduling / 预约看房 |
+|:---:|:---:|
+| ![Property Detail & Map](docs/images/screenshots/05_property_detail_and_map.png) | ![Schedule Viewing](docs/images/screenshots/06_schedule_viewing.png) |
+| *Interactive Google Maps pins & one-tap phone call*<br>Google Maps 空间定位图钉与房东电话直拨一键唤起 | *In-app appointment booking for in-person inspection*<br>租客选择拟看房日期与时间段，一键直达房东待办 |
+
+| 7. Digital Rental Application / 提交预订申请 | 8. In-App E-Signature Canvas / 手写数字签名 |
+|:---:|:---:|
+| ![Rental Application](docs/images/screenshots/07_rental_application.png) | ![Digital Signature](docs/images/screenshots/08_digital_signature.png) |
+| *Tenant formal application with lease duration & notes*<br>租客提交起租日、租期时长 (如 24 个月) 与留言备注 | *Pressure-sensitive digital signature pad with live preview*<br>压感数字签名画板，笔触抗锯齿并实时预览签署位置 |
+
+| 9. Bilingual Legal Contract Review / 双向合同终审 | 10. Stripe In-App Payment Gateway / 在线收银台 |
+|:---:|:---:|
+| ![Bilingual Contract Review](docs/images/screenshots/09_bilingual_contract_review.png) | ![Stripe Payment](docs/images/screenshots/10_stripe_payment.png) |
+| *Both signatures stitched into formal legal PDF*<br>甲乙双方法定签名动态排版合成最终法律效力电子合同 | *Native Stripe Sheet: Credit Card, Link, Apple/Google Pay*<br>Stripe 原生收银台安全缴付首期租金与房屋押金 |
+
+| 11. Instant Digital Receipt / 不可篡改支付收据 | 12. Management Dashboard / 双端资产管理看板 |
+|:---:|:---:|
+| ![Payment Receipt](docs/images/screenshots/11_payment_receipt.png) | ![Management Dashboard](docs/images/screenshots/12_management_dashboard.png) |
+| *Verifiable transaction breakdown with Payment Intent ID*<br>包含交易单号、支付日期与状态的法律凭证收据 | *Tenant rent schedule & Landlord collection tracker*<br>租客交租倒计时还款日与房东租金催收全景监控 |
 
 ---
 
@@ -259,7 +299,8 @@ smart_rental_system/
 │       └── fonts/                  # Offline Noto Sans & Noto Sans SC fonts
 ├── docs/                           # Documentation and visual diagrams
 │   └── images/
-│       └── smart_rental_conceptual_diagram.png # Architecture model diagram
+│       ├── smart_rental_conceptual_diagram.png # Architecture model diagram
+│       └── screenshots/            # High-resolution production UI keyframes
 ├── lib/                            # Dart / Flutter core source code
 │   ├── main.dart                   # Main entry, theme setup & network observer
 │   ├── Compoents/                  # Reusable UI component library
@@ -561,7 +602,8 @@ smart_rental_system/
 │           └── NotoSansSC-Bold.ttf
 ├── docs/                           # 文档与架构图资源
 │   └── images/
-│       └── smart_rental_conceptual_diagram.png # 概念架构模型图
+│       ├── smart_rental_conceptual_diagram.png # 概念架构模型图
+│       └── screenshots/            # 1080P 高清实机运行截图
 ├── lib/                            # Flutter 核心业务源码
 │   ├── main.dart                   # 应用入口、全局主题与网络监听初始化
 │   ├── Compoents/                  # 可复用 UI 组件库
@@ -677,3 +719,4 @@ flutter run -d windows
 - **Author / 作者**：**MOYUNXUAN**
 - **License / 开源协议**：[MIT License](LICENSE). Free for personal, academic, and commercial study. / 欢迎自由学习、研究、扩展与提交 Pull Request！
 - **GitHub Repository / 官方仓库**：[https://github.com/MOYUNXUAN4/smart_rental_system](https://github.com/MOYUNXUAN4/smart_rental_system)
+- **Demo Video / 演示视频**：[YouTube Live Demo (https://youtu.be/iYnOc6fSKF4)](https://youtu.be/iYnOc6fSKF4)
