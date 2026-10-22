@@ -17,7 +17,7 @@
   <img src="https://img.shields.io/badge/Maps-Google%20Maps-4285F4.svg?logo=google-maps" alt="Google Maps" />
   <img src="https://img.shields.io/badge/UI%2FUX-Glassmorphism%20%26%20Cyber--Aurora-purple.svg" alt="Design" />
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License" />
-  <img src="https://img.shields.io/badge/Author-MOYUNXUAN-orange.svg" alt="Author" />
+  <img src="https://img.shields.io/badge/Author-MOYUNXUAN4-orange.svg" alt="Author" />
 </p>
 
 ---
@@ -716,7 +716,7 @@ flutter run -d windows
 
 ## 👨‍💻 Author & License / 作者与开源许可
 
-- **Author / 作者**：**MOYUNXUAN**
+- **Author / 作者**：**MOYUNXUAN4**
 - **License / 开源协议**：[MIT License](LICENSE). Free for personal, academic, and commercial study. / 欢迎自由学习、研究、扩展与提交 Pull Request！
 - **GitHub Repository / 官方仓库**：[https://github.com/MOYUNXUAN4/smart_rental_system](https://github.com/MOYUNXUAN4/smart_rental_system)
 - **Demo Video / 演示视频**：[YouTube Live Demo (https://youtu.be/iYnOc6fSKF4)](https://youtu.be/iYnOc6fSKF4)
